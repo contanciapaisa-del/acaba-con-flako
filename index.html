@@ -1,0 +1,4101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Acaba con Flak0 — Juego 3D</title>
+
+  <!-- Tailwind CSS para interfaz moderna y responsiva -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Fuentes: 'Press Start 2P' SOLO para la intro pixelada; 'Inter' y 'Rajdhani' para la UI moderna -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Press+Start+2P&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet" />
+
+  <!-- Three.js r128 para renderizado 3D profesional -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <style>
+    /* Estilos base del juego y efectos visuales */
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #05050a;
+      font-family: 'Inter', sans-serif;
+      color: #f8fafc;
+      touch-action: none;
+    }
+
+    #game-container {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Fuente exclusiva para la intro de 4 segundos */
+    .font-pixel {
+      font-family: 'Press Start 2P', monospace;
+    }
+
+    .font-display {
+      font-family: 'Rajdhani', sans-serif;
+    }
+
+    /* Animaciones de la intro pixelada */
+    @keyframes pixelGlitch {
+      0%, 100% {
+        text-shadow: 0 0 18px rgba(239, 68, 68, 0.9), -4px 0 0 rgba(168, 85, 247, 0.85), 4px 0 0 rgba(34, 211, 238, 0.85);
+        transform: translate(0, 0) scale(1);
+      }
+      20% {
+        text-shadow: 0 0 28px rgba(239, 68, 68, 1), 5px -2px 0 rgba(168, 85, 247, 0.95), -5px 2px 0 rgba(34, 211, 238, 0.95);
+        transform: translate(-2px, 1px) scale(1.02);
+      }
+      40% {
+        text-shadow: 0 0 16px rgba(239, 68, 68, 0.8), -3px 2px 0 rgba(168, 85, 247, 0.8), 3px -2px 0 rgba(34, 211, 238, 0.8);
+        transform: translate(2px, -1px) scale(0.99);
+      }
+      60% {
+        text-shadow: 0 0 34px rgba(248, 113, 113, 1), -6px 0 0 rgba(239, 68, 68, 0.9), 6px 0 0 rgba(168, 85, 247, 0.9);
+        transform: translate(0, 0) scale(1.03);
+      }
+    }
+
+    @keyframes introTitleIn {
+      0% { opacity: 0; transform: scale(0.72) translateY(20px); filter: blur(8px); }
+      25% { opacity: 1; transform: scale(1.04) translateY(0); filter: blur(0px); }
+      85% { opacity: 1; transform: scale(1); filter: blur(0px); }
+      100% { opacity: 0; transform: scale(1.12); filter: blur(6px); }
+    }
+
+    @keyframes scanlineMove {
+      0% { background-position: 0 0; }
+      100% { background-position: 0 100%; }
+    }
+
+    @keyframes barFill4s {
+      0% { width: 0%; }
+      100% { width: 100%; }
+    }
+
+    .intro-scanlines {
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.03) 0px,
+        rgba(255, 255, 255, 0.03) 2px,
+        transparent 2px,
+        transparent 5px
+      );
+      animation: scanlineMove 8s linear infinite;
+    }
+
+    .intro-title-anim {
+      animation: introTitleIn 4s cubic-bezier(0.22, 1, 0.36, 1) forwards, pixelGlitch 0.45s infinite alternate;
+    }
+
+    .intro-bar-anim {
+      animation: barFill4s 4s linear forwards;
+    }
+
+    /* Botones estilizados para el juego */
+    .btn-game {
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.16s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+
+    .btn-game:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-game:active {
+      transform: translateY(1px) scale(0.98);
+    }
+
+    /* Paneles con vidrio oscuro profesional */
+    .glass-panel {
+      background: linear-gradient(145deg, rgba(15, 18, 30, 0.88), rgba(8, 10, 18, 0.94));
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+    }
+
+    /* Viñeta de daño al recibir golpe */
+    #damage-vignette {
+      pointer-events: none;
+      background: radial-gradient(circle, transparent 48%, rgba(220, 38, 38, 0.72) 100%);
+      opacity: 0;
+      transition: opacity 0.15s ease-out;
+    }
+
+    /* Flash blanco/celeste al disparar el cañón de la torre */
+    #cannon-flash {
+      pointer-events: none;
+      background: radial-gradient(circle, rgba(34, 211, 238, 0.65) 0%, rgba(168, 85, 247, 0.25) 60%, transparent 100%);
+      opacity: 0;
+      transition: opacity 0.35s ease-out;
+    }
+
+    /* Mira central */
+    .crosshair-line {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+    }
+
+    /* Scrollbar limpio en modales */
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 99px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(168, 85, 247, 0.5);
+      border-radius: 99px;
+    }
+
+    /* Etiquetas 3D proyectadas (barras de vida de monstruos y portales del lobby) */
+    .world-label {
+      position: fixed;
+      transform: translate(-50%, -100%);
+      pointer-events: none;
+      will-change: transform;
+    }
+
+    /* Controles táctiles móviles */
+    #joystick-base {
+      touch-action: none;
+      background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, rgba(15,23,42,0.55) 100%);
+      border: 2px solid rgba(255,255,255,0.22);
+    }
+    #joystick-knob {
+      background: radial-gradient(circle at 30% 30%, #c084fc, #7e22ce);
+      box-shadow: 0 0 18px rgba(168, 85, 247, 0.75);
+    }
+
+    /* Permitir selección dentro de inputs de reportes */
+    input, textarea, select {
+      user-select: text;
+      -webkit-user-select: text;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Contenedor del lienzo 3D -->
+  <div id="game-container"></div>
+
+  <!-- Capa de etiquetas proyectadas en el mundo 3D (portales del lobby y barras de vida de monstruos) -->
+  <div id="world-labels-layer" class="fixed inset-0 pointer-events-none z-10 overflow-hidden"></div>
+
+  <!-- Efectos de pantalla (daño y destello de cañón) -->
+  <div id="damage-vignette" class="fixed inset-0 z-20"></div>
+  <div id="cannon-flash" class="fixed inset-0 z-20"></div>
+
+  <!-- =========================================================
+       1. INTRO ANIMADA PIXELADA (4 SEGUNDOS EXACTOS)
+  ========================================================== -->
+  <div id="intro-overlay" class="fixed inset-0 z-50 bg-[#040408] flex flex-col items-center justify-center overflow-hidden transition-opacity duration-700">
+    <canvas id="intro-particles-canvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+    <div class="intro-scanlines absolute inset-0 pointer-events-none"></div>
+
+    <div class="relative z-10 flex flex-col items-center px-6 text-center max-w-4xl">
+      <div class="font-pixel text-[10px] sm:text-xs tracking-[0.35em] text-purple-400/90 uppercase mb-6 animate-pulse">
+        CARGANDO MOTOR 3D // PROTOTIPO OFICIAL
+      </div>
+
+      <h1 class="font-pixel intro-title-anim text-2xl sm:text-4xl md:text-5xl lg:text-6xl text-white leading-tight tracking-wider">
+        Acaba con <span class="text-red-500">Flak0</span>
+      </h1>
+
+      <div class="mt-10 w-64 sm:w-80 h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/15">
+        <div class="intro-bar-anim h-full bg-gradient-to-r from-purple-600 via-red-500 to-cyan-400"></div>
+      </div>
+
+      <button id="btn-skip-intro" class="mt-8 px-5 py-2 rounded-full bg-white/5 hover:bg-white/15 border border-white/15 text-xs text-slate-300 tracking-wider uppercase transition">
+        Saltar Intro ▸
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       2. MENÚ PRINCIPAL MODERNO (NO PIXELADO)
+  ========================================================== -->
+  <div id="main-menu" class="fixed inset-0 z-40 hidden flex-col items-center justify-center p-4 bg-gradient-to-b from-black/55 via-black/35 to-black/75">
+    <div class="glass-panel rounded-3xl p-6 sm:p-9 w-full max-w-lg text-center relative">
+      <!-- Etiqueta de compatibilidad -->
+      <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-purple-500/15 border border-purple-400/30 text-purple-200 text-xs font-semibold tracking-wide mb-4">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        PC &amp; Móvil • Prototipo 3D Interactivo
+      </div>
+
+      <!-- Título moderno -->
+      <h1 class="font-display text-4xl sm:text-6xl font-bold tracking-wider uppercase bg-gradient-to-r from-white via-purple-200 to-red-400 bg-clip-text text-transparent drop-shadow">
+        ACABA CON FLAK0
+      </h1>
+      <p class="text-slate-300/85 text-sm sm:text-base mt-2 mb-7">
+        Escapa, ármate y destruye a Flako y a sus 6 aliados usando la Torre de Cañones.
+      </p>
+
+      <!-- Botones centrales del menú -->
+      <div class="flex flex-col gap-3.5">
+        <!-- Botón 1: Entrar al Lobby -->
+        <button id="btn-enter-lobby" class="btn-game w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-purple-600 via-fuchsia-600 to-red-600 text-white font-bold text-lg tracking-wide shadow-[0_10px_30px_rgba(168,85,247,0.45)] border border-white/20 flex items-center justify-center gap-3">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z"/></svg>
+          ENTRAR AL LOBBY
+        </button>
+
+        <!-- Botón 2: Modo de Cámara (1ª Persona / 3ª Persona F5) -->
+        <button id="btn-menu-camera" class="btn-game w-full py-3.5 px-5 rounded-2xl bg-slate-900/80 hover:bg-slate-800/90 text-white font-semibold text-base border border-cyan-400/35 shadow-lg flex items-center justify-between">
+          <span class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            MODO DE CÁMARA
+          </span>
+          <span id="menu-camera-badge" class="px-3 py-1 rounded-xl bg-cyan-500/20 text-cyan-300 text-xs font-bold border border-cyan-400/30">
+            Tercera Persona (F5)
+          </span>
+        </button>
+
+        <!-- Botón 3: Propuestas y Reportes -->
+        <button id="btn-menu-reports" class="btn-game w-full py-3.5 px-5 rounded-2xl bg-slate-900/80 hover:bg-slate-800/90 text-white font-semibold text-base border border-amber-400/35 shadow-lg flex items-center justify-between">
+          <span class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg>
+            PROPUESTAS Y REPORTES
+          </span>
+          <span class="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-bold">Panel Vivo</span>
+        </button>
+      </div>
+
+      <!-- Información rápida de controles -->
+      <div class="mt-6 pt-4 border-t border-white/10 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-400">
+        <span><strong class="text-slate-200">WASD</strong> Mover</span>
+        <span><strong class="text-slate-200">Ratón / Touch</strong> Mirar &amp; Disparar</span>
+        <span><strong class="text-slate-200">F5 / V</strong> Cámara</span>
+        <span><strong class="text-slate-200">E</strong> Interactuar</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       3. HUD EN JUEGO Y LOBBY
+  ========================================================== -->
+  <div id="hud" class="fixed inset-0 z-30 hidden pointer-events-none">
+    <!-- Barra superior: Estado del modo / Monstruos / Torre / Botón Configuración -->
+    <div class="absolute top-3 left-3 right-3 flex items-start justify-between gap-2">
+      <!-- Izquierda: Ubicación y Monstruos -->
+      <div class="flex flex-col gap-2 pointer-events-auto">
+        <div class="glass-panel rounded-2xl px-4 py-2 flex items-center gap-3">
+          <div id="hud-zone-dot" class="w-2.5 h-2.5 rounded-full bg-purple-400 animate-pulse"></div>
+          <div>
+            <div id="hud-zone-title" class="font-display font-bold text-sm sm:text-base tracking-wide text-white leading-none">LOBBY CENTRAL</div>
+            <div id="hud-zone-sub" class="text-[11px] text-slate-400 mt-0.5">Baja las escaleras hacia las 4 auras</div>
+          </div>
+        </div>
+
+        <!-- Contador de monstruos (solo en Kill Flako) -->
+        <div id="hud-combat-stats" class="hidden flex-wrap items-center gap-2">
+          <div class="glass-panel rounded-2xl px-3.5 py-2 flex items-center gap-2.5 border-red-500/35">
+            <span class="text-red-400 font-bold text-sm">☠</span>
+            <div class="text-xs sm:text-sm font-bold text-white">
+              MONSTRUOS: <span id="hud-monsters-left" class="text-red-400 text-base">7</span><span class="text-slate-400">/7</span>
+            </div>
+          </div>
+
+          <div class="glass-panel rounded-2xl px-3.5 py-2 flex items-center gap-2 border-cyan-400/35">
+            <span class="text-cyan-400 text-sm">🗼</span>
+            <div class="text-xs sm:text-sm font-semibold text-cyan-200">
+              TORRE: <span id="hud-tower-dist" class="font-bold text-white">-- m</span>
+              <span id="hud-tower-dir" class="ml-1 text-cyan-400 font-bold">↑</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Derecha: Botón Cámara F5 y Pausa/Configuración -->
+      <div class="flex items-center gap-2 pointer-events-auto">
+        <button id="btn-hud-camera" title="Cambiar Cámara (F5 / V)" class="glass-panel hover:bg-white/10 rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-cyan-300 flex items-center gap-1.5 transition">
+          <span>🎥</span>
+          <span id="hud-cam-label" class="hidden sm:inline">3ª Persona</span>
+        </button>
+
+        <button id="btn-hud-settings" title="Configuración (P / Esc)" class="glass-panel hover:bg-white/10 rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-white flex items-center gap-1.5 transition">
+          <span>⚙</span>
+          <span class="hidden sm:inline">Menú</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Banner de eventos/notificaciones rápidas en combate -->
+    <div id="hud-toast" class="absolute top-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-2xl glass-panel border-purple-400/50 text-center text-xs sm:text-sm font-bold text-white opacity-0 transition-opacity duration-300 max-w-md">
+      Notificación
+    </div>
+
+    <!-- Aviso de Pointer Lock para PC (clic para controlar cámara) -->
+    <div id="pointer-lock-banner" class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-24 pointer-events-auto">
+      <button id="btn-resume-lock" class="glass-panel px-6 py-3 rounded-2xl border-purple-400/60 text-white font-semibold text-sm shadow-2xl hover:scale-105 transition">
+        🖱 Haz clic aquí para activar el control de ratón
+      </button>
+    </div>
+
+    <!-- Mira central -->
+    <div id="crosshair" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 pointer-events-none">
+      <div class="crosshair-line w-2 h-0.5 left-0 top-1/2 -translate-y-1/2"></div>
+      <div class="crosshair-line w-2 h-0.5 right-0 top-1/2 -translate-y-1/2"></div>
+      <div class="crosshair-line h-2 w-0.5 top-0 left-1/2 -translate-x-1/2"></div>
+      <div class="crosshair-line h-2 w-0.5 bottom-0 left-1/2 -translate-x-1/2"></div>
+      <div class="w-1 h-1 rounded-full bg-red-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+    </div>
+
+    <!-- Prompt interactivo central inferior (Portales del lobby o Cañón de la Torre) -->
+    <div id="interact-prompt" class="hidden fixed bottom-36 sm:bottom-28 left-1/2 -translate-x-1/2 pointer-events-auto">
+      <button id="btn-interact-action" class="btn-game px-6 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-purple-600 text-white font-bold text-sm sm:text-base shadow-[0_0_25px_rgba(34,211,238,0.55)] border border-white/30 flex items-center gap-2.5 animate-bounce">
+        <span class="px-2 py-0.5 rounded-md bg-black/40 text-xs font-mono">E</span>
+        <span id="interact-prompt-text">Interactuar</span>
+      </button>
+    </div>
+
+    <!-- Panel inferior: Vida del jugador + Hotbar de 5 armas -->
+    <div class="absolute bottom-3 left-1/2 -translate-x-1/2 w-[94%] max-w-2xl flex flex-col items-center gap-2 pointer-events-auto">
+      <!-- Barra de salud (solo visible en combate o siempre compacta) -->
+      <div id="hud-hp-container" class="hidden w-full max-w-md glass-panel rounded-2xl px-4 py-2">
+        <div class="flex items-center justify-between text-xs font-bold mb-1">
+          <span class="text-emerald-300 flex items-center gap-1.5">♥ SALUD <span id="hud-shield-tag" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/25 text-cyan-300">+VIDA EXTRA</span></span>
+          <span id="hud-hp-text" class="text-white">100 / 100</span>
+        </div>
+        <div class="w-full h-3 bg-slate-900 rounded-full overflow-hidden border border-white/10">
+          <div id="hud-hp-bar" class="h-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-150" style="width: 100%"></div>
+        </div>
+      </div>
+
+      <!-- Barra de 5 armas (solo visible en combate) -->
+      <div id="hud-weapons-bar" class="hidden grid grid-cols-5 gap-1.5 sm:gap-2 w-full">
+        <!-- Generado dinámicamente por JS -->
+      </div>
+    </div>
+
+    <!-- Controles táctiles para Móvil (visibles en modo Touch o pantallas táctiles) -->
+    <div id="mobile-controls" class="hidden fixed inset-0 pointer-events-none z-30">
+      <!-- Joystick virtual izquierdo -->
+      <div id="joystick-zone" class="fixed bottom-24 left-4 w-36 h-36 pointer-events-auto flex items-center justify-center">
+        <div id="joystick-base" class="w-28 h-28 rounded-full relative flex items-center justify-center">
+          <div id="joystick-knob" class="w-12 h-12 rounded-full absolute"></div>
+        </div>
+      </div>
+
+      <!-- Zona derecha para girar cámara deslizando -->
+      <div id="touch-look-zone" class="fixed top-16 right-0 bottom-24 w-1/2 pointer-events-auto"></div>
+
+      <!-- Botones táctiles derechos: Disparar / Saltar / Interactuar -->
+      <div class="fixed bottom-24 right-4 flex flex-col items-end gap-3 pointer-events-auto">
+        <div class="flex items-center gap-3">
+          <button id="btn-touch-jump" class="w-14 h-14 rounded-full glass-panel border-cyan-400/50 text-cyan-200 font-bold text-xs flex flex-col items-center justify-center active:scale-90 transition">
+            <span>⬆</span>
+            <span>SALTAR</span>
+          </button>
+          <button id="btn-touch-fire" class="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-rose-700 border-2 border-white/40 shadow-[0_0_24px_rgba(239,68,68,0.65)] text-white font-extrabold text-xs flex flex-col items-center justify-center active:scale-90 transition">
+            <span class="text-xl">🎯</span>
+            <span>ATACAR</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       4. MODALES (REPORTES, SELECTOR DE ESCENARIOS, CONFIGURACIÓN,
+          PRÓXIMAMENTE, VICTORIA / DERROTA)
+  ========================================================== -->
+
+  <!-- Modal: Propuestas y Reportes + Panel de Creador -->
+  <div id="modal-reports" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+    <div class="glass-panel rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+        <div>
+          <h2 class="font-display text-2xl font-bold text-white tracking-wide">PROPUESTAS Y REPORTES</h2>
+          <p class="text-xs text-slate-400">Envía sugerencias, reporta errores o revisa los mensajes en el Panel de Creador</p>
+        </div>
+        <button data-close-modal="modal-reports" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold">✕</button>
+      </div>
+
+      <!-- Pestañas -->
+      <div class="px-6 pt-4 flex gap-2">
+        <button id="tab-send-report" class="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-purple-600 text-white transition">
+          ✉ Enviar Mensaje
+        </button>
+        <button id="tab-creator-panel" class="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-white/5 text-slate-300 hover:bg-white/10 transition flex items-center justify-center gap-2">
+          🛠 Panel de Creador / Ver Reportes
+          <span id="reports-count-badge" class="px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-300 text-xs font-bold">0</span>
+        </button>
+      </div>
+
+      <!-- Contenido Pestaña 1: Formulario -->
+      <div id="panel-send-report" class="p-6 overflow-y-auto custom-scroll space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Categoría</label>
+            <select id="report-category" class="w-full rounded-xl bg-slate-900/90 border border-white/15 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-purple-400">
+              <option value="Reporte de Bug">🐞 Reporte de Bug</option>
+              <option value="Propuesta de Mejora">💡 Propuesta de Mejora</option>
+              <option value="Nuevo Modo / Mapa">🗺 Nuevo Modo / Mapa</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Tu Nombre / Usuario</label>
+            <input id="report-author" type="text" maxlength="40" placeholder="Ej. JugadorPro" class="w-full rounded-xl bg-slate-900/90 border border-white/15 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-purple-400" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">Mensaje detallado</label>
+          <textarea id="report-message" rows="4" maxlength="500" placeholder="Cuéntanos qué error encontraste o qué mejora quieres para Acaba con Flak0..." class="w-full rounded-xl bg-slate-900/90 border border-white/15 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-purple-400 resize-none"></textarea>
+        </div>
+
+        <div id="report-feedback" class="hidden rounded-xl px-4 py-2.5 text-xs font-semibold"></div>
+
+        <button id="btn-submit-report" class="btn-game w-full py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-bold text-sm tracking-wide shadow-lg">
+          ENVIAR REPORTE / PROPUESTA
+        </button>
+      </div>
+
+      <!-- Contenido Pestaña 2: Panel de Creador -->
+      <div id="panel-creator-view" class="hidden p-6 overflow-y-auto custom-scroll space-y-4">
+        <div class="rounded-2xl bg-purple-500/10 border border-purple-400/25 p-3.5 text-xs text-purple-100 leading-relaxed">
+          <div class="font-bold text-purple-300 mb-1">☁ Modalidad de Hosting y Edición del Creador</div>
+          Los mensajes se sincronizan automáticamente en la nube en tiempo real (o en memoria local si lo pruebas sin conexión). Puedes editar este archivo HTML directamente desde tu editor de código y publicarlo gratis como app web/PWA o empaquetarlo para Google Play (TWA / Capacitor) en Vercel, Netlify o Firebase Hosting.
+        </div>
+
+        <div id="reports-list" class="space-y-3">
+          <!-- Lista de reportes renderizada por JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Selector de Escenarios ("Kill Flako") -->
+  <div id="modal-scenarios" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+    <div class="glass-panel rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-y-auto custom-scroll p-6">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-widest text-purple-400">Modo Activo • Aura Morada</span>
+          <h2 class="font-display text-3xl font-bold text-white">KILL FLAKO — ELIGE ESCENARIO</h2>
+          <p class="text-xs sm:text-sm text-slate-400 mt-1">Sobrevive a 7 monstruos, recoge las 5 armas y llega a la Torre para disparar los cañones.</p>
+        </div>
+        <button data-close-modal="modal-scenarios" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold">✕</button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Escenario 1: Terror -->
+        <button data-scenario="terror" class="scenario-card btn-game text-left rounded-2xl p-4 bg-gradient-to-b from-red-950/75 to-slate-950 border border-red-500/40 hover:border-red-400 flex flex-col justify-between gap-4">
+          <div>
+            <div class="w-12 h-12 rounded-xl bg-red-500/20 border border-red-400/40 flex items-center justify-center text-2xl mb-3">🌑</div>
+            <h3 class="font-display text-xl font-bold text-white">1. TERROR</h3>
+            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">
+              Recinto maldito cubierto de niebla espesa, muros en ruinas, rejas oxidadas, faroles rojos parpadeantes y árboles muertos.
+            </p>
+          </div>
+          <div class="w-full py-2 rounded-xl bg-red-600/80 text-center text-xs font-bold text-white uppercase tracking-wider">
+            Jugar Escenario ▸
+          </div>
+        </button>
+
+        <!-- Escenario 2: Colegio de Terror -->
+        <button data-scenario="school" class="scenario-card btn-game text-left rounded-2xl p-4 bg-gradient-to-b from-cyan-950/75 to-slate-950 border border-cyan-500/40 hover:border-cyan-400 flex flex-col justify-between gap-4">
+          <div>
+            <div class="w-12 h-12 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-2xl mb-3">🏫</div>
+            <h3 class="font-display text-xl font-bold text-white">2. COLEGIO DE TERROR</h3>
+            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">
+              Patio y pasillos de colegio abandonado con baldosas frías, casilleros metálicos, pupitres volcados, pizarras y luces fluorescentes.
+            </p>
+          </div>
+          <div class="w-full py-2 rounded-xl bg-cyan-600/80 text-center text-xs font-bold text-white uppercase tracking-wider">
+            Jugar Escenario ▸
+          </div>
+        </button>
+
+        <!-- Escenario 3: Supermercado Bombardeado -->
+        <button data-scenario="supermarket" class="scenario-card btn-game text-left rounded-2xl p-4 bg-gradient-to-b from-amber-950/75 to-slate-950 border border-amber-500/40 hover:border-amber-400 flex flex-col justify-between gap-4">
+          <div>
+            <div class="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-2xl mb-3">💥</div>
+            <h3 class="font-display text-xl font-bold text-white">3. SUPERMERCADO</h3>
+            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">
+              Supermercado atacado y bombardeado con estanterías colapsadas, cajas rotas, vigas caídas y cráteres en llamas.
+            </p>
+          </div>
+          <div class="w-full py-2 rounded-xl bg-amber-600/80 text-center text-xs font-bold text-white uppercase tracking-wider">
+            Jugar Escenario ▸
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Próximamente ("Jugando con David" - Aura Amarilla) -->
+  <div id="modal-coming-soon" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+    <div class="glass-panel rounded-3xl w-full max-w-md p-7 text-center border-yellow-400/40">
+      <div class="w-16 h-16 mx-auto rounded-2xl bg-yellow-500/20 border border-yellow-400/40 flex items-center justify-center text-3xl mb-4">🚧</div>
+      <div class="text-xs font-bold uppercase tracking-widest text-yellow-400">Aura Amarilla • Modo Bloqueado</div>
+      <h2 class="font-display text-3xl font-bold text-white mt-1">JUGANDO CON DAVID</h2>
+      <p class="text-sm text-slate-300 mt-3 leading-relaxed">
+        <strong>PRÓXIMAMENTE / EN DESARROLLO.</strong><br/>
+        Este modo está reservado para nuestra próxima actualización mientras perfeccionamos al 100% el modo <strong>"Kill Flako"</strong>.
+      </p>
+      <button data-close-modal="modal-coming-soon" class="btn-game mt-6 w-full py-3 rounded-2xl bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-extrabold text-sm uppercase">
+        Entendido, volver al Lobby
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal: Configuración (Aura Roja / Botón Pausa) -->
+  <div id="modal-settings" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+    <div class="glass-panel rounded-3xl w-full max-w-md p-6 border-red-400/30">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="font-display text-2xl font-bold text-white">⚙ CONFIGURACIÓN</h2>
+        <button data-close-modal="modal-settings" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold">✕</button>
+      </div>
+
+      <div class="space-y-5">
+        <!-- Volumen -->
+        <div>
+          <div class="flex justify-between text-xs font-semibold text-slate-300 mb-1.5">
+            <span>🔊 Volumen Maestro</span>
+            <span id="setting-volume-val" class="text-purple-300">75%</span>
+          </div>
+          <input id="setting-volume" type="range" min="0" max="100" value="75" class="w-full accent-purple-500" />
+        </div>
+
+        <!-- Sensibilidad -->
+        <div>
+          <div class="flex justify-between text-xs font-semibold text-slate-300 mb-1.5">
+            <span>🎯 Sensibilidad de Cámara</span>
+            <span id="setting-sens-val" class="text-cyan-300">1.0x</span>
+          </div>
+          <input id="setting-sens" type="range" min="4" max="22" value="10" class="w-full accent-cyan-400" />
+        </div>
+
+        <!-- Controles PC / Móvil -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-2">🎮 Controles (PC / Celular)</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button data-ctrl-mode="auto" class="ctrl-mode-btn py-2 rounded-xl text-xs font-bold border border-white/15 bg-white/5 text-slate-300">Auto</button>
+            <button data-ctrl-mode="pc" class="ctrl-mode-btn py-2 rounded-xl text-xs font-bold border border-white/15 bg-white/5 text-slate-300">PC</button>
+            <button data-ctrl-mode="mobile" class="ctrl-mode-btn py-2 rounded-xl text-xs font-bold border border-white/15 bg-white/5 text-slate-300">Móvil Touch</button>
+          </div>
+        </div>
+
+        <!-- Cámara -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-2">🎥 Perspectiva de Cámara</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button data-cam-mode="third" class="cam-mode-btn py-2.5 rounded-xl text-xs font-bold border border-white/15 bg-white/5 text-slate-300">3ª Persona (F5)</button>
+            <button data-cam-mode="first" class="cam-mode-btn py-2.5 rounded-xl text-xs font-bold border border-white/15 bg-white/5 text-slate-300">1ª Persona (FPS)</button>
+          </div>
+        </div>
+
+        <!-- Botones de acción -->
+        <div class="pt-3 border-t border-white/10 flex flex-col gap-2.5">
+          <button data-close-modal="modal-settings" class="btn-game w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-bold text-sm">
+            Continuar Jugando
+          </button>
+          <button id="btn-settings-lobby" class="hidden btn-game w-full py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-semibold text-sm">
+            Volver al Lobby 3D
+          </button>
+          <button id="btn-settings-exit" class="btn-game w-full py-2.5 rounded-2xl bg-red-600/80 hover:bg-red-500 text-white font-semibold text-sm">
+            Salir al Menú Principal
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Fin de Partida (Victoria / Derrota) -->
+  <div id="modal-endgame" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+    <div class="glass-panel rounded-3xl w-full max-w-md p-7 text-center">
+      <div id="endgame-icon" class="text-5xl mb-3">🏆</div>
+      <h2 id="endgame-title" class="font-display text-4xl font-bold text-white">¡VICTORIA!</h2>
+      <p id="endgame-desc" class="text-sm text-slate-300 mt-2">Has derrotado a Flako y a sus 6 aliados.</p>
+
+      <div class="grid grid-cols-3 gap-2 my-6">
+        <div class="rounded-2xl bg-white/5 border border-white/10 p-3">
+          <div class="text-[10px] text-slate-400 uppercase">Tiempo</div>
+          <div id="stat-time" class="font-display text-xl font-bold text-white">00:00</div>
+        </div>
+        <div class="rounded-2xl bg-white/5 border border-white/10 p-3">
+          <div class="text-[10px] text-slate-400 uppercase">Eliminados</div>
+          <div id="stat-kills" class="font-display text-xl font-bold text-red-400">7/7</div>
+        </div>
+        <div class="rounded-2xl bg-white/5 border border-white/10 p-3">
+          <div class="text-[10px] text-slate-400 uppercase">Cañonazos</div>
+          <div id="stat-cannons" class="font-display text-xl font-bold text-cyan-400">0</div>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-2.5">
+        <button id="btn-endgame-retry" class="btn-game w-full py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-red-600 text-white font-bold text-sm">
+          Jugar de Nuevo
+        </button>
+        <button id="btn-endgame-lobby" class="btn-game w-full py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-semibold text-sm">
+          Volver al Lobby 3D
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       SERVICIO DE REPORTES CON FIRESTORE (CON RESPALDO EN MEMORIA)
+  ========================================================== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const ReportService = {
+      db: null,
+      user: null,
+      appId: typeof __app_id !== 'undefined' ? __app_id : 'acaba-con-flako-app',
+      inMemoryReports: [
+        {
+          id: 'welcome-msg',
+          category: 'Propuesta de Mejora',
+          author: 'Sistema Acaba con Flak0',
+          message: '¡Bienvenido al Panel de Creador! Todos los reportes y propuestas que envíen los jugadores aparecerán aquí al instante.',
+          status: 'Revisado',
+          createdAt: Date.now()
+        }
+      ],
+      listeners: [],
+
+      notify(items) {
+        const sorted = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        this.listeners.forEach(fn => fn(sorted));
+      },
+
+      subscribe(fn) {
+        this.listeners.push(fn);
+        this.notify(this.inMemoryReports);
+      },
+
+      async init() {
+        try {
+          if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+            return;
+          }
+          const firebaseConfig = typeof __firebase_config === 'string'
+            ? JSON.parse(__firebase_config)
+            : __firebase_config;
+
+          const app = initializeApp(firebaseConfig);
+          const auth = getAuth(app);
+          this.db = getFirestore(app);
+
+          // Regla 3: Autenticar SIEMPRE antes de cualquier consulta Firestore
+          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            const cred = await signInWithCustomToken(auth, __initial_auth_token);
+            this.user = cred.user;
+          } else {
+            const cred = await signInAnonymously(auth);
+            this.user = cred.user;
+          }
+
+          if (!this.user) return;
+
+          // Regla 1 y 2: Ruta pública estricta sin consultas compuestas
+          const colRef = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'reports');
+          onSnapshot(
+            colRef,
+            (snap) => {
+              const docs = [];
+              snap.forEach((d) => docs.push({ id: d.id, ...d.data() }));
+              this.inMemoryReports = docs.length ? docs : this.inMemoryReports;
+              this.notify(docs);
+            },
+            (err) => {
+              console.warn('Firestore snapshot fallback:', err.message);
+            }
+          );
+        } catch (err) {
+          console.warn('Ejecutando sistema de reportes en modo memoria local:', err.message);
+        }
+      },
+
+      async addReport({ category, author, message }) {
+        const entry = {
+          category,
+          author: author || 'Jugador Anónimo',
+          message,
+          status: 'Pendiente',
+          createdAt: Date.now()
+        };
+
+        if (this.db && this.user) {
+          try {
+            const colRef = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'reports');
+            await addDoc(colRef, entry);
+            return true;
+          } catch (err) {
+            console.warn('Fallback al guardar reporte:', err.message);
+          }
+        }
+
+        this.inMemoryReports.unshift({ id: 'rep-' + Date.now(), ...entry });
+        this.notify(this.inMemoryReports);
+        return true;
+      },
+
+      async toggleStatus(id, currentStatus) {
+        const nextStatus = currentStatus === 'Revisado' ? 'Pendiente' : 'Revisado';
+        if (this.db && this.user && !id.startsWith('rep-') && id !== 'welcome-msg') {
+          try {
+            const docRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'reports', id);
+            await updateDoc(docRef, { status: nextStatus });
+            return;
+          } catch (err) {
+            console.warn('Fallback al actualizar estado:', err.message);
+          }
+        }
+        const found = this.inMemoryReports.find(r => r.id === id);
+        if (found) found.status = nextStatus;
+        this.notify(this.inMemoryReports);
+      },
+
+      async removeReport(id) {
+        if (this.db && this.user && !id.startsWith('rep-') && id !== 'welcome-msg') {
+          try {
+            const docRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'reports', id);
+            await deleteDoc(docRef);
+            return;
+          } catch (err) {
+            console.warn('Fallback al eliminar reporte:', err.message);
+          }
+        }
+        this.inMemoryReports = this.inMemoryReports.filter(r => r.id !== id);
+        this.notify(this.inMemoryReports);
+      }
+    };
+
+    window.ReportService = ReportService;
+    ReportService.init();
+  </script>
+
+  <!-- =========================================================
+       MOTOR PRINCIPAL DEL JUEGO 3D ("ACABA CON FLAK0")
+  ========================================================== -->
+  <script>
+    (() => {
+      'use strict';
+
+      /* ==========================================================
+         A. MOTOR DE SONIDO PROCEDURAL (WEB AUDIO API)
+      =========================================================== */
+      class SoundEngine {
+        constructor() {
+          this.ctx = null;
+          this.volume = 0.75;
+        }
+
+        ensure() {
+          if (!this.ctx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) this.ctx = new AudioCtx();
+          }
+          if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+          }
+        }
+
+        setVolume(v) {
+          this.volume = Math.max(0, Math.min(1, v));
+        }
+
+        playTone({ freq = 220, endFreq = 80, duration = 0.2, type = 'sawtooth', gain = 0.25 }) {
+          if (this.volume <= 0.01) return;
+          this.ensure();
+          if (!this.ctx) return;
+
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, now);
+          osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), now + duration);
+
+          g.gain.setValueAtTime(gain * this.volume, now);
+          g.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+          osc.connect(g);
+          g.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + duration);
+        }
+
+        playNoise({ duration = 0.16, gain = 0.25, filterFreq = 1200 }) {
+          if (this.volume <= 0.01) return;
+          this.ensure();
+          if (!this.ctx) return;
+
+          const bufferSize = Math.floor(this.ctx.sampleRate * duration);
+          const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+          }
+
+          const src = this.ctx.createBufferSource();
+          src.buffer = buffer;
+
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.value = filterFreq;
+
+          const g = this.ctx.createGain();
+          g.gain.value = gain * this.volume;
+
+          src.connect(filter);
+          filter.connect(g);
+          g.connect(this.ctx.destination);
+          src.start();
+        }
+
+        playIntroSting() {
+          this.playTone({ freq: 110, endFreq: 55, duration: 1.4, type: 'sawtooth', gain: 0.22 });
+          setTimeout(() => this.playTone({ freq: 330, endFreq: 220, duration: 0.5, type: 'square', gain: 0.12 }), 350);
+          setTimeout(() => this.playTone({ freq: 440, endFreq: 110, duration: 0.9, type: 'triangle', gain: 0.18 }), 850);
+        }
+
+        playClick() {
+          this.playTone({ freq: 580, endFreq: 840, duration: 0.07, type: 'sine', gain: 0.15 });
+        }
+
+        playPickup() {
+          this.playTone({ freq: 440, endFreq: 880, duration: 0.15, type: 'triangle', gain: 0.2 });
+          setTimeout(() => this.playTone({ freq: 660, endFreq: 1180, duration: 0.18, type: 'sine', gain: 0.18 }), 90);
+        }
+
+        playWeapon(id) {
+          if (id === 'knife') {
+            this.playNoise({ duration: 0.11, gain: 0.22, filterFreq: 3200 });
+            this.playTone({ freq: 520, endFreq: 180, duration: 0.09, type: 'triangle', gain: 0.14 });
+          } else if (id === 'pistol') {
+            this.playNoise({ duration: 0.1, gain: 0.28, filterFreq: 2400 });
+            this.playTone({ freq: 320, endFreq: 75, duration: 0.11, type: 'square', gain: 0.2 });
+          } else if (id === 'shotgun') {
+            this.playNoise({ duration: 0.26, gain: 0.45, filterFreq: 1100 });
+            this.playTone({ freq: 145, endFreq: 38, duration: 0.24, type: 'sawtooth', gain: 0.34 });
+          } else if (id === 'rifle') {
+            this.playNoise({ duration: 0.08, gain: 0.25, filterFreq: 2100 });
+            this.playTone({ freq: 260, endFreq: 95, duration: 0.08, type: 'sawtooth', gain: 0.18 });
+          } else if (id === 'plasma') {
+            this.playTone({ freq: 920, endFreq: 120, duration: 0.35, type: 'sawtooth', gain: 0.28 });
+            this.playNoise({ duration: 0.25, gain: 0.22, filterFreq: 1600 });
+          }
+        }
+
+        playHit() {
+          this.playTone({ freq: 190, endFreq: 90, duration: 0.07, type: 'triangle', gain: 0.2 });
+        }
+
+        playHurt() {
+          this.playTone({ freq: 130, endFreq: 48, duration: 0.22, type: 'sawtooth', gain: 0.32 });
+          this.playNoise({ duration: 0.15, gain: 0.24, filterFreq: 800 });
+        }
+
+        playMonsterDeath() {
+          this.playTone({ freq: 260, endFreq: 36, duration: 0.55, type: 'sawtooth', gain: 0.3 });
+          this.playNoise({ duration: 0.35, gain: 0.32, filterFreq: 900 });
+        }
+
+        playCannonCharge() {
+          this.playTone({ freq: 110, endFreq: 780, duration: 1.1, type: 'sawtooth', gain: 0.26 });
+        }
+
+        playCannonBlast() {
+          this.playNoise({ duration: 0.9, gain: 0.65, filterFreq: 750 });
+          this.playTone({ freq: 180, endFreq: 28, duration: 0.95, type: 'sawtooth', gain: 0.48 });
+          setTimeout(() => this.playTone({ freq: 520, endFreq: 65, duration: 0.6, type: 'square', gain: 0.22 }), 80);
+        }
+      }
+
+      const sound = new SoundEngine();
+
+      /* ==========================================================
+         B. GENERADOR DE TEXTURAS PROCEDURALES (CERO URLs EXTERNAS)
+      =========================================================== */
+      const Textures = {
+        cache: {},
+        create(key, drawFn, repeatX = 1, repeatY = 1) {
+          if (this.cache[key]) return this.cache[key];
+          const canvas = document.createElement('canvas');
+          canvas.width = 256;
+          canvas.height = 256;
+          const ctx = canvas.getContext('2d');
+          drawFn(ctx, 256, 256);
+          const tex = new THREE.CanvasTexture(canvas);
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.wrapT = THREE.RepeatWrapping;
+          tex.repeat.set(repeatX, repeatY);
+          this.cache[key] = tex;
+          return tex;
+        },
+
+        lobbyFloor() {
+          return this.create('lobbyFloor', (ctx, w, h) => {
+            ctx.fillStyle = '#0e111d';
+            ctx.fillRect(0, 0, w, h);
+            ctx.strokeStyle = '#252c48';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(4, 4, w - 8, h - 8);
+            ctx.fillStyle = '#151a2e';
+            ctx.fillRect(16, 16, w - 32, h - 32);
+            ctx.strokeStyle = 'rgba(168, 85, 247, 0.25)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
+            ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h);
+            ctx.stroke();
+          }, 16, 16);
+        },
+
+        terrorGround() {
+          return this.create('terrorGround', (ctx, w, h) => {
+            ctx.fillStyle = '#141318';
+            ctx.fillRect(0, 0, w, h);
+            for (let i = 0; i < 600; i++) {
+              ctx.fillStyle = Math.random() > 0.5 ? 'rgba(42,36,48,0.6)' : 'rgba(10,8,12,0.7)';
+              ctx.fillRect(Math.random() * w, Math.random() * h, 5 + Math.random() * 12, 5 + Math.random() * 12);
+            }
+            ctx.strokeStyle = 'rgba(65, 20, 28, 0.25)';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 8; i++) {
+              ctx.beginPath();
+              ctx.moveTo(Math.random() * w, Math.random() * h);
+              ctx.lineTo(Math.random() * w, Math.random() * h);
+              ctx.stroke();
+            }
+          }, 20, 20);
+        },
+
+        schoolTile() {
+          return this.create('schoolTile', (ctx, w, h) => {
+            const s = w / 4;
+            for (let y = 0; y < 4; y++) {
+              for (let x = 0; x < 4; x++) {
+                const dark = (x + y) % 2 === 0;
+                ctx.fillStyle = dark ? '#1d2530' : '#2a3442';
+                ctx.fillRect(x * s, y * s, s, s);
+                ctx.strokeStyle = '#11161d';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x * s, y * s, s, s);
+              }
+            }
+            // Suciedad atmosférica
+            for (let i = 0; i < 120; i++) {
+              ctx.fillStyle = 'rgba(0,0,0,0.18)';
+              ctx.fillRect(Math.random() * w, Math.random() * h, 8, 8);
+            }
+          }, 22, 22);
+        },
+
+        marketFloor() {
+          return this.create('marketFloor', (ctx, w, h) => {
+            ctx.fillStyle = '#23201e';
+            ctx.fillRect(0, 0, w, h);
+            ctx.strokeStyle = '#332d28';
+            ctx.lineWidth = 3;
+            for (let i = 0; i <= w; i += 64) {
+              ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, h); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke();
+            }
+            // Ceniza y grietas de explosión
+            for (let i = 0; i < 240; i++) {
+              ctx.fillStyle = Math.random() > 0.3 ? 'rgba(15,12,10,0.55)' : 'rgba(120,65,25,0.22)';
+              ctx.fillRect(Math.random() * w, Math.random() * h, 6 + Math.random() * 14, 6 + Math.random() * 14);
+            }
+          }, 20, 20);
+        },
+
+        stoneWall() {
+          return this.create('stoneWall', (ctx, w, h) => {
+            ctx.fillStyle = '#252630';
+            ctx.fillRect(0, 0, w, h);
+            const rows = 8;
+            const rh = h / rows;
+            for (let r = 0; r < rows; r++) {
+              const offset = (r % 2) * 32;
+              for (let c = -1; c < 5; c++) {
+                ctx.fillStyle = (c + r) % 2 === 0 ? '#2f313e' : '#262833';
+                ctx.fillRect(c * 64 + offset + 2, r * rh + 2, 60, rh - 4);
+              }
+            }
+          }, 6, 2);
+        },
+
+        stripedShirt() {
+          return this.create('stripedShirt', (ctx, w, h) => {
+            const colors = ['#dc2626', '#2563eb', '#eab308', '#16a34a'];
+            const band = h / 8;
+            for (let i = 0; i < 8; i++) {
+              ctx.fillStyle = colors[i % colors.length];
+              ctx.fillRect(0, i * band, w, band);
+            }
+          }, 1, 1);
+        }
+      };
+
+      /* ==========================================================
+         C. DEFINICIÓN DE LAS 5 ARMAS Y LOS 7 MONSTRUOS
+      =========================================================== */
+      const WEAPONS = [
+        {
+          id: 'knife',
+          key: '1',
+          name: 'Cuchillo Táctico',
+          shortName: 'Cuchillo',
+          icon: '🗡',
+          damage: 48,
+          range: 4.0,
+          cooldown: 0.34,
+          ammo: Infinity,
+          maxAmmo: Infinity,
+          melee: true,
+          color: 0xdbeafe,
+          unlocked: true
+        },
+        {
+          id: 'pistol',
+          key: '2',
+          name: 'Pistola 9mm',
+          shortName: 'Pistola',
+          icon: '🔫',
+          damage: 34,
+          range: 65,
+          cooldown: 0.26,
+          ammo: 48,
+          maxAmmo: 90,
+          pellets: 1,
+          spread: 0.014,
+          color: 0xfde047,
+          unlocked: true
+        },
+        {
+          id: 'shotgun',
+          key: '3',
+          name: 'Escopeta Combate',
+          shortName: 'Escopeta',
+          icon: '💥',
+          damage: 24, // x5 perdigones = 120 máx cerca
+          range: 34,
+          cooldown: 0.78,
+          ammo: 0,
+          maxAmmo: 32,
+          pellets: 5,
+          spread: 0.075,
+          color: 0xf97316,
+          unlocked: false
+        },
+        {
+          id: 'rifle',
+          key: '4',
+          name: 'Rifle de Asalto',
+          shortName: 'Rifle',
+          icon: '⚡',
+          damage: 25,
+          range: 78,
+          cooldown: 0.11,
+          ammo: 0,
+          maxAmmo: 150,
+          pellets: 1,
+          spread: 0.025,
+          auto: true,
+          color: 0x38bdf8,
+          unlocked: false
+        },
+        {
+          id: 'plasma',
+          key: '5',
+          name: 'Lanzador Plasma',
+          shortName: 'Plasma',
+          icon: '🚀',
+          damage: 145,
+          range: 72,
+          cooldown: 1.05,
+          ammo: 0,
+          maxAmmo: 18,
+          explosive: true,
+          blastRadius: 7.5,
+          color: 0xc084fc,
+          unlocked: false
+        }
+      ];
+
+      /* ==========================================================
+         D. ESTADO GLOBAL DEL JUEGO
+      =========================================================== */
+      const state = {
+        mode: 'INTRO', // INTRO | MENU | LOBBY | PLAYING | VICTORY | DEFEAT
+        scenario: 'terror',
+        cameraMode: 'third', // 'third' (F5) | 'first' (FPS)
+        controlMode: 'auto', // 'auto' | 'pc' | 'mobile'
+        isTouchDevice: ('ontouchstart' in window) || navigator.maxTouchPoints > 0,
+        sensitivity: 1.0,
+        paused: false,
+        modalOpen: false,
+
+        // Jugador
+        player: {
+          pos: new THREE.Vector3(0, 2.6, 0),
+          vel: new THREE.Vector3(),
+          yaw: 0,
+          pitch: -0.08,
+          onGround: true,
+          hp: 100,
+          maxHp: 100,
+          overhealMax: 150,
+          activeWeaponIdx: 1, // Inicia con Pistola equipada y Cuchillo listo
+          fireTimer: 0,
+          walkCycle: 0,
+          recoil: 0,
+          hurtTimer: 0,
+          knifeSlashAnim: 0,
+          mouseDown: false
+        },
+
+        // Input
+        keys: {},
+        joy: { x: 0, y: 0, active: false },
+
+        // Objetos del mundo activo
+        obstacles: [],
+        portals: [],
+        monsters: [],
+        pickups: [],
+        mapKnives: [],
+        projectiles: [],
+        effects: [],
+        flickerLights: [],
+        tower: null,
+
+        // Estadísticas de partida
+        matchTime: 0,
+        kills: 0,
+        cannonShots: 0,
+        cameraShake: 0,
+        currentInteract: null
+      };
+
+      /* ==========================================================
+         E. INICIALIZACIÓN DE THREE.JS
+      =========================================================== */
+      const container = document.getElementById('game-container');
+      const labelsLayer = document.getElementById('world-labels-layer');
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.15;
+      container.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 260);
+      scene.add(camera);
+
+      // Grupo raíz para limpiar fácilmente cada escenario
+      const worldGroup = new THREE.Group();
+      scene.add(worldGroup);
+
+      // Grupo de cámara en primera persona (brazos + arma)
+      const fpGroup = new THREE.Group();
+      camera.add(fpGroup);
+
+      /* ==========================================================
+         F. MODELO 3D DEL JUGADOR (BASADO EN LA IMAGEN DE REFERENCIA)
+            Cuerpo atlético y esbelto (NO ancho como Roblox), cabeza negra
+            con cabello en puntas, ojos pálidos semicerrados, camisa marrón
+            rosáceo/taupe, chaleco negro, corbata negra, manos pálidas.
+      =========================================================== */
+      function createPlayerRig() {
+        const root = new THREE.Group();
+
+        const matBlack = new THREE.MeshStandardMaterial({ color: 0x0b0b0f, roughness: 0.72, metalness: 0.1 });
+        const matVest = new THREE.MeshStandardMaterial({ color: 0x121218, roughness: 0.55, metalness: 0.15 });
+        const matShirt = new THREE.MeshStandardMaterial({ color: 0xa27b6f, roughness: 0.78 }); // Camisa taupe/rosa apagado
+        const matSkin = new THREE.MeshStandardMaterial({ color: 0xd6d3cb, roughness: 0.65 });  // Cuello y manos pálidas
+        const matEye = new THREE.MeshBasicMaterial({ color: 0xebe7d8 }); // Ojos pálidos brillantes
+
+        // Torso esbelto con chaleco negro
+        const torso = new THREE.Group();
+        torso.position.y = 1.16;
+        root.add(torso);
+
+        const chest = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.19, 0.56, 12), matVest);
+        chest.scale.set(1.18, 1, 0.68);
+        chest.castShadow = true;
+        torso.add(chest);
+
+        // Cuello camisa + corbata negra
+        const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.11, 10), matShirt);
+        collar.position.set(0, 0.30, 0.01);
+        torso.add(collar);
+
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.14, 10), matSkin);
+        neck.position.set(0, 0.36, 0);
+        torso.add(neck);
+
+        const tie = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.34, 0.03), matBlack);
+        tie.position.set(0, 0.11, 0.175);
+        torso.add(tie);
+
+        // Cabeza sombría negra estilizada
+        const headGroup = new THREE.Group();
+        headGroup.position.set(0, 0.52, 0);
+        torso.add(headGroup);
+
+        const skull = new THREE.Mesh(new THREE.SphereGeometry(0.175, 16, 14), matBlack);
+        skull.scale.set(0.92, 1.12, 0.96);
+        skull.castShadow = true;
+        headGroup.add(skull);
+
+        // Cabello negro puntiagudo hacia arriba/atrás como la imagen
+        const spikeConfigs = [
+          [0, 0.21, -0.02, 0.11, 0.18, -0.25, 0],
+          [-0.08, 0.19, -0.04, 0.08, 0.16, -0.2, 0.25],
+          [0.08, 0.19, -0.04, 0.08, 0.16, -0.2, -0.25],
+          [0.03, 0.16, -0.11, 0.09, 0.17, -0.55, -0.1],
+          [-0.05, 0.14, -0.12, 0.08, 0.15, -0.6, 0.15]
+        ];
+        spikeConfigs.forEach(([x, y, z, r, h, rx, rz]) => {
+          const sp = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), matBlack);
+          sp.position.set(x, y, z);
+          sp.rotation.set(rx, 0, rz);
+          headGroup.add(sp);
+        });
+
+        // Dos ojos pálidos semicerrados (media luna con borde superior recto)
+        const eyeShape = new THREE.Shape();
+        eyeShape.moveTo(-0.042, 0.012);
+        eyeShape.lineTo(0.042, 0.012);
+        eyeShape.quadraticCurveTo(0.038, -0.032, 0, -0.035);
+        eyeShape.quadraticCurveTo(-0.038, -0.032, -0.042, 0.012);
+        const eyeGeo = new THREE.ShapeGeometry(eyeShape);
+
+        const leftEye = new THREE.Mesh(eyeGeo, matEye);
+        leftEye.position.set(-0.062, 0.015, 0.165);
+        leftEye.rotation.y = -0.18;
+        headGroup.add(leftEye);
+
+        const rightEye = new THREE.Mesh(eyeGeo, matEye);
+        rightEye.position.set(0.062, 0.015, 0.165);
+        rightEye.rotation.y = 0.18;
+        headGroup.add(rightEye);
+
+        // Brazos atléticos esbeltos con mangas de camisa taupe y manos pálidas
+        function makeArm(side) {
+          const pivot = new THREE.Group();
+          pivot.position.set(side * 0.30, 0.22, 0);
+
+          const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.058, 0.30, 10), matShirt);
+          upper.position.y = -0.14;
+          upper.castShadow = true;
+          pivot.add(upper);
+
+          const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.046, 0.28, 10), matShirt);
+          fore.position.set(0, -0.39, 0.04);
+          fore.rotation.x = -0.25;
+          fore.castShadow = true;
+          pivot.add(fore);
+
+          const hand = new THREE.Mesh(new THREE.SphereGeometry(0.054, 10, 10), matSkin);
+          hand.scale.set(0.85, 1.15, 0.7);
+          hand.position.set(0, -0.54, 0.09);
+          pivot.add(hand);
+
+          return pivot;
+        }
+
+        const leftArm = makeArm(-1);
+        const rightArm = makeArm(1);
+        torso.add(leftArm, rightArm);
+
+        // Anclaje de arma 3ª persona en la mano derecha
+        const weaponMount = new THREE.Group();
+        weaponMount.position.set(0, -0.53, 0.16);
+        rightArm.add(weaponMount);
+
+        // Piernas estilizadas con pantalón negro
+        function makeLeg(side) {
+          const pivot = new THREE.Group();
+          pivot.position.set(side * 0.115, 0.88, 0);
+
+          const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.068, 0.44, 10), matBlack);
+          thigh.position.y = -0.22;
+          thigh.castShadow = true;
+          pivot.add(thigh);
+
+          const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.052, 0.44, 10), matBlack);
+          shin.position.y = -0.64;
+          shin.castShadow = true;
+          pivot.add(shin);
+
+          const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.08, 0.23), matVest);
+          shoe.position.set(0, -0.85, 0.045);
+          pivot.add(shoe);
+
+          return pivot;
+        }
+
+        const leftLeg = makeLeg(-1);
+        const rightLeg = makeLeg(1);
+        root.add(leftLeg, rightLeg);
+
+        root.userData = { torso, headGroup, leftArm, rightArm, leftLeg, rightLeg, weaponMount };
+        return root;
+      }
+
+      // Constructor de modelos 3D para las 5 armas
+      function buildWeaponMesh(weaponId) {
+        const g = new THREE.Group();
+        const metalDark = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.35, metalness: 0.75 });
+        const metalSilver = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.2, metalness: 0.9 });
+
+        if (weaponId === 'knife') {
+          const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.16, 8), metalDark);
+          handle.rotation.x = Math.PI / 2;
+          const guard = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.02, 0.02), metalDark);
+          guard.position.z = 0.08;
+          const blade = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.32, 4), metalSilver);
+          blade.rotation.x = Math.PI / 2;
+          blade.scale.set(0.35, 1, 1);
+          blade.position.z = 0.24;
+          g.add(handle, guard, blade);
+        } else if (weaponId === 'pistol') {
+          const slide = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 0.32), metalDark);
+          slide.position.set(0, 0.04, 0.1);
+          const grip = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.16, 0.08), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+          grip.position.set(0, -0.06, 0);
+          grip.rotation.x = 0.2;
+          g.add(slide, grip);
+        } else if (weaponId === 'shotgun') {
+          const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.11, 0.68), metalDark);
+          body.position.set(0, 0.02, 0.22);
+          const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.65, 8), metalSilver);
+          barrel.rotation.x = Math.PI / 2;
+          barrel.position.set(0, 0.07, 0.36);
+          const pump = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.08, 0.2), new THREE.MeshStandardMaterial({ color: 0x9a3412 }));
+          pump.position.set(0, -0.02, 0.34);
+          g.add(body, barrel, pump);
+        } else if (weaponId === 'rifle') {
+          const body = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.12, 0.62), metalDark);
+          body.position.set(0, 0.03, 0.22);
+          const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 8), metalSilver);
+          barrel.rotation.x = Math.PI / 2;
+          barrel.position.set(0, 0.05, 0.58);
+          const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.08), metalDark);
+          mag.position.set(0, -0.11, 0.24);
+          mag.rotation.x = 0.22;
+          const sight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.16), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+          sight.position.set(0, 0.11, 0.18);
+          g.add(body, barrel, mag, sight);
+        } else if (weaponId === 'plasma') {
+          const body = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.11, 0.85, 10), metalDark);
+          body.rotation.x = Math.PI / 2;
+          body.position.set(0, 0.04, 0.26);
+          const core = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
+          core.rotation.x = Math.PI / 2;
+          core.position.set(0, 0.04, 0.45);
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.02, 8, 16), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
+          ring.position.set(0, 0.04, 0.66);
+          g.add(body, core, ring);
+        }
+        return g;
+      }
+
+      // Crear rig del jugador y manos en primera persona
+      const playerRig = createPlayerRig();
+      scene.add(playerRig);
+
+      // Modelo en 1ª persona (brazos con camisa taupe + mano pálida + arma)
+      const fpArms = new THREE.Group();
+      const fpSleeveMat = new THREE.MeshStandardMaterial({ color: 0xa27b6f, roughness: 0.78 });
+      const fpSkinMat = new THREE.MeshStandardMaterial({ color: 0xd6d3cb, roughness: 0.65 });
+
+      const fpRightSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.075, 0.46, 10), fpSleeveMat);
+      fpRightSleeve.rotation.x = Math.PI / 2.2;
+      fpRightSleeve.position.set(0.32, -0.32, -0.36);
+
+      const fpRightHand = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), fpSkinMat);
+      fpRightHand.position.set(0.28, -0.25, -0.56);
+
+      const fpWeaponMount = new THREE.Group();
+      fpWeaponMount.position.set(0.28, -0.24, -0.60);
+      fpWeaponMount.rotation.y = Math.PI;
+
+      fpArms.add(fpRightSleeve, fpRightHand, fpWeaponMount);
+      fpGroup.add(fpArms);
+
+      function refreshEquippedWeaponVisuals() {
+        const w = WEAPONS[state.player.activeWeaponIdx];
+        const mount3 = playerRig.userData.weaponMount;
+        while (mount3.children.length) mount3.remove(mount3.children[0]);
+        while (fpWeaponMount.children.length) fpWeaponMount.remove(fpWeaponMount.children[0]);
+
+        if (state.mode === 'PLAYING') {
+          mount3.add(buildWeaponMesh(w.id));
+          fpWeaponMount.add(buildWeaponMesh(w.id));
+        }
+      }
+
+      /* ==========================================================
+         G. MODELOS 3D DE LOS 7 MONSTRUOS ("FLAKO" + AMIGOS)
+      =========================================================== */
+      function createMonsterMesh(type) {
+        const g = new THREE.Group();
+        const animParts = {};
+
+        if (type === 'flako') {
+          // FLAKO: Muy musculoso, camisa verde oscuro, pierna derecha de CALAVERA/HUESO blanca, pierna izquierda musculosa NEGRA
+          const matDarkGreen = new THREE.MeshStandardMaterial({ color: 0x134224, roughness: 0.65 });
+          const matBlackMuscle = new THREE.MeshStandardMaterial({ color: 0x111116, roughness: 0.45, metalness: 0.15 });
+          const matBone = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.35 });
+          const matGlowRed = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+
+          // Torso masivo musculoso con camisa verde oscuro
+          const chest = new THREE.Mesh(new THREE.BoxGeometry(1.45, 1.35, 0.85), matDarkGreen);
+          chest.position.y = 2.15;
+          chest.castShadow = true;
+          g.add(chest);
+
+          const pecL = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), matDarkGreen);
+          pecL.position.set(-0.34, 2.38, 0.28);
+          const pecR = pecL.clone();
+          pecR.position.x = 0.34;
+          g.add(pecL, pecR);
+
+          // Cabeza intimidante de Flako
+          const head = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.72, 0.68), matBlackMuscle);
+          head.position.y = 3.22;
+          head.castShadow = true;
+          g.add(head);
+
+          const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.06), matGlowRed);
+          eyeL.position.set(-0.16, 3.28, 0.35);
+          const eyeR = eyeL.clone();
+          eyeR.position.x = 0.16;
+          g.add(eyeL, eyeR);
+
+          // Brazos hiper-musculosos
+          const armL = new THREE.Group();
+          armL.position.set(-0.98, 2.62, 0);
+          const shoulderL = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 10), matDarkGreen);
+          const bicepL = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 1.35, 10), matBlackMuscle);
+          bicepL.position.y = -0.68;
+          armL.add(shoulderL, bicepL);
+          g.add(armL);
+
+          const armR = new THREE.Group();
+          armR.position.set(0.98, 2.62, 0);
+          const shoulderR = shoulderL.clone();
+          const bicepR = bicepL.clone();
+          armR.add(shoulderR, bicepR);
+          g.add(armR);
+
+          // PIERNA IZQUIERDA (X negativo en su frente): Pierna negra ultra musculosa
+          const leftLeg = new THREE.Group();
+          leftLeg.position.set(-0.38, 1.48, 0);
+          const thighBlack = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.24, 0.78, 12), matBlackMuscle);
+          thighBlack.position.y = -0.38;
+          const calfBlack = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.19, 0.74, 12), matBlackMuscle);
+          calfBlack.position.y = -1.1;
+          leftLeg.add(thighBlack, calfBlack);
+          g.add(leftLeg);
+
+          // PIERNA DERECHA (X positivo): PIERNA DE CALAVERA / HUESOS BLANCOS
+          const rightLeg = new THREE.Group();
+          rightLeg.position.set(0.38, 1.48, 0);
+          const femur = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.10, 0.74, 10), matBone);
+          femur.position.y = -0.36;
+          // Rodilla con forma de cráneo pequeño
+          const kneeSkull = new THREE.Mesh(new THREE.SphereGeometry(0.20, 12, 10), matBone);
+          kneeSkull.position.set(0, -0.74, 0.06);
+          const kEye1 = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), matBlackMuscle);
+          kEye1.position.set(-0.07, -0.72, 0.22);
+          const kEye2 = kEye1.clone();
+          kEye2.position.x = 0.07;
+          // Tibia y peroné dobles
+          const tibia = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.72, 8), matBone);
+          tibia.position.set(-0.06, -1.12, 0);
+          const fibula = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.70, 8), matBone);
+          fibula.position.set(0.08, -1.12, 0);
+          const boneFoot = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.12, 0.42), matBone);
+          boneFoot.position.set(0, -1.44, 0.08);
+          rightLeg.add(femur, kneeSkull, kEye1, kEye2, tibia, fibula, boneFoot);
+          g.add(rightLeg);
+
+          animParts.armL = armL; animParts.armR = armR; animParts.legL = leftLeg; animParts.legR = rightLeg;
+
+        } else if (type === 'mod1') {
+          // MOD 1: CABEZA MUY GRANDE (lanza su cabeza gigante como ataque)
+          const matBody = new THREE.MeshStandardMaterial({ color: 0x3b2f4a, roughness: 0.7 });
+          const matHead = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.55 });
+          const matEye = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+
+          const body = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.28, 1.15, 10), matBody);
+          body.position.y = 1.45;
+          g.add(body);
+
+          const giantHead = new THREE.Mesh(new THREE.SphereGeometry(0.92, 18, 16), matHead);
+          giantHead.position.y = 2.85;
+          giantHead.castShadow = true;
+          const e1 = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), matEye);
+          e1.position.set(-0.32, 0.14, 0.78);
+          const e2 = e1.clone(); e2.position.x = 0.32;
+          const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.18, 0.15), new THREE.MeshBasicMaterial({ color: 0x111111 }));
+          mouth.position.set(0, -0.32, 0.80);
+          giantHead.add(e1, e2, mouth);
+          g.add(giantHead);
+
+          const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 0.9, 8), matBody);
+          legL.position.set(-0.18, 0.45, 0);
+          const legR = legL.clone(); legR.position.x = 0.18;
+          g.add(legL, legR);
+
+          animParts.giantHead = giantHead; animParts.legL = legL; animParts.legR = legR;
+
+        } else if (type === 'mod2') {
+          // MOD 2: SÚPER LENGUA
+          const matSkin = new THREE.MeshStandardMaterial({ color: 0x5c1a2a, roughness: 0.6 });
+          const matTongue = new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0x881337, emissiveIntensity: 0.35, roughness: 0.25 });
+
+          const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.32, 1.25, 10), matSkin);
+          torso.position.y = 1.52;
+          torso.rotation.x = 0.16;
+          g.add(torso);
+
+          const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), matSkin);
+          head.position.set(0, 2.34, 0.12);
+          g.add(head);
+
+          // Súper Lengua extensible animada
+          const tonguePivot = new THREE.Group();
+          tonguePivot.position.set(0, 2.22, 0.42);
+          const tongueMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 1.0, 10), matTongue);
+          tongueMesh.rotation.x = Math.PI / 2;
+          tongueMesh.position.z = 0.5;
+          tonguePivot.add(tongueMesh);
+          g.add(tonguePivot);
+
+          const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.95, 8), matSkin);
+          legL.position.set(-0.22, 0.48, 0);
+          const legR = legL.clone(); legR.position.x = 0.22;
+          g.add(legL, legR);
+
+          animParts.tonguePivot = tonguePivot; animParts.legL = legL; animParts.legR = legR;
+
+        } else if (type === 'mod3') {
+          // MOD 3: CABEZA CUADRADA, HUMANOIDE ALTO, LANZA CUCHILLAS
+          const matCoat = new THREE.MeshStandardMaterial({ color: 0x263245, roughness: 0.65 });
+          const matCubeHead = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.35, metalness: 0.5 });
+
+          const torso = new THREE.Mesh(new THREE.BoxGeometry(0.75, 1.48, 0.42), matCoat);
+          torso.position.y = 1.92;
+          torso.castShadow = true;
+          g.add(torso);
+
+          // Cabeza perfectamente cuadrada
+          const sqHead = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.76, 0.76), matCubeHead);
+          sqHead.position.y = 3.06;
+          sqHead.castShadow = true;
+          const visor = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.14, 0.08), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
+          visor.position.set(0, 0.04, 0.38);
+          sqHead.add(visor);
+          g.add(sqHead);
+
+          const legL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.2, 0.26), matCoat);
+          legL.position.set(-0.21, 0.6, 0);
+          const legR = legL.clone(); legR.position.x = 0.21;
+          const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.25, 0.2), matCoat);
+          armL.position.set(-0.52, 1.9, 0);
+          const armR = armL.clone(); armR.position.x = 0.52;
+          g.add(legL, legR, armL, armR);
+
+          animParts.armL = armL; animParts.armR = armR; animParts.legL = legL; animParts.legR = legR;
+
+        } else if (type === 'mod4') {
+          // MOD 4: ESTILO CHUCKY (pequeño, rápido, overol azul, camisa a rayas, busca cuchillos en el mapa)
+          const matOveralls = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.7 });
+          const matStripes = new THREE.MeshStandardMaterial({ map: Textures.stripedShirt(), roughness: 0.7 });
+          const matFace = new THREE.MeshStandardMaterial({ color: 0xf1c29b, roughness: 0.6 });
+          const matHair = new THREE.MeshStandardMaterial({ color: 0xd9480f, roughness: 0.8 });
+
+          const body = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.62, 0.30), matOveralls);
+          body.position.y = 0.84;
+          g.add(body);
+
+          const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 12), matFace);
+          head.position.y = 1.38;
+          const hair = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 10), matHair);
+          hair.position.set(0, 0.08, -0.04);
+          hair.scale.set(1.06, 0.9, 1.05);
+          head.add(hair);
+          const e1 = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+          e1.position.set(-0.08, 0.02, 0.23);
+          const e2 = e1.clone(); e2.position.x = 0.08;
+          head.add(e1, e2);
+          g.add(head);
+
+          const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.48, 8), matStripes);
+          armL.position.set(-0.32, 0.92, 0.06);
+          const armR = armL.clone();
+          armR.position.x = 0.32;
+          // Cuchillo equipado cuando lo consigue
+          const knife = buildWeaponMesh('knife');
+          knife.scale.set(1.5, 1.5, 1.5);
+          knife.position.set(0, -0.22, 0.12);
+          knife.visible = false;
+          armR.add(knife);
+          g.add(armL, armR);
+
+          const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.09, 0.54, 8), matOveralls);
+          legL.position.set(-0.14, 0.27, 0);
+          const legR = legL.clone(); legR.position.x = 0.14;
+          g.add(legL, legR);
+
+          animParts.armL = armL; animParts.armR = armR; animParts.legL = legL; animParts.legR = legR;
+          animParts.heldKnife = knife;
+
+        } else if (type === 'mod5') {
+          // MOD 5: TRAJE NEGRO ELEGANTE CON CUCHILLAS FILUDAS POR DEFECTO
+          const matSuit = new THREE.MeshStandardMaterial({ color: 0x09090d, roughness: 0.42, metalness: 0.25 });
+          const matWhite = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+          const matRedTie = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+          const matBlade = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.95, roughness: 0.1 });
+
+          const torso = new THREE.Mesh(new THREE.BoxGeometry(0.68, 1.25, 0.36), matSuit);
+          torso.position.y = 1.72;
+          torso.castShadow = true;
+          g.add(torso);
+
+          const shirtV = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.42, 0.38), matWhite);
+          shirtV.position.set(0, 2.08, 0.01);
+          const tie = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.40), matRedTie);
+          tie.position.set(0, 1.98, 0.02);
+          g.add(shirtV, tie);
+
+          const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 14, 14), matSuit);
+          head.position.y = 2.62;
+          const e1 = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.04, 0.05), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+          e1.position.set(-0.08, 0.02, 0.23);
+          const e2 = e1.clone(); e2.position.x = 0.08;
+          head.add(e1, e2);
+          g.add(head);
+
+          // Brazos con cuchillas largas filudas por defecto
+          function makeBladedArm(side) {
+            const p = new THREE.Group();
+            p.position.set(side * 0.44, 2.20, 0);
+            const a = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.95, 8), matSuit);
+            a.position.y = -0.45;
+            const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.95), matBlade);
+            blade.position.set(0, -0.88, 0.42);
+            p.add(a, blade);
+            return p;
+          }
+
+          const armL = makeBladedArm(-1);
+          const armR = makeBladedArm(1);
+          g.add(armL, armR);
+
+          const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 1.1, 8), matSuit);
+          legL.position.set(-0.18, 0.55, 0);
+          const legR = legL.clone(); legR.position.x = 0.18;
+          g.add(legL, legR);
+
+          animParts.armL = armL; animParts.armR = armR; animParts.legL = legL; animParts.legR = legR;
+
+        } else {
+          // MOD 6: SOMBRA DE FLAKO (7° monstruo élite)
+          const matShadow = new THREE.MeshStandardMaterial({ color: 0x1e1030, emissive: 0x3b0764, emissiveIntensity: 0.45, roughness: 0.5 });
+          const torso = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.9, 8), matShadow);
+          torso.position.y = 1.45;
+          torso.rotation.x = Math.PI;
+          g.add(torso);
+
+          const head = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 1), matShadow);
+          head.position.y = 2.65;
+          const e1 = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
+          e1.position.set(-0.12, 0.03, 0.30);
+          const e2 = e1.clone(); e2.position.x = 0.12;
+          head.add(e1, e2);
+          g.add(head);
+
+          const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.04, 1.2, 8), matShadow);
+          armL.position.set(-0.55, 1.9, 0.15);
+          const armR = armL.clone(); armR.position.x = 0.55;
+          g.add(armL, armR);
+
+          animParts.armL = armL; animParts.armR = armR; animParts.floatHead = head;
+        }
+
+        g.userData.animParts = animParts;
+        return g;
+      }
+
+      /* ==========================================================
+         H. CONSTRUCCIÓN DE ESCENAS (MENÚ, LOBBY 3D Y 3 ESCENARIOS)
+      =========================================================== */
+      function clearWorld() {
+        while (worldGroup.children.length) {
+          const obj = worldGroup.children[0];
+          worldGroup.remove(obj);
+        }
+        labelsLayer.innerHTML = '';
+        state.obstacles = [];
+        state.portals = [];
+        state.monsters = [];
+        state.pickups = [];
+        state.mapKnives = [];
+        state.projectiles = [];
+        state.effects = [];
+        state.flickerLights = [];
+        state.tower = null;
+        state.currentInteract = null;
+      }
+
+      function addObstacleBox(x, y, z, w, h, d, material, castShadow = true) {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+        mesh.position.set(x, y, z);
+        mesh.castShadow = castShadow;
+        mesh.receiveShadow = true;
+        worldGroup.add(mesh);
+        state.obstacles.push({
+          minX: x - w / 2,
+          maxX: x + w / 2,
+          minZ: z - d / 2,
+          maxZ: z + d / 2,
+          topY: y + h / 2
+        });
+        return mesh;
+      }
+
+      /* --- ESCENA DE FONDO DEL MENÚ PRINCIPAL --- */
+      function buildMenuBackdrop() {
+        clearWorld();
+        scene.background = new THREE.Color(0x070611);
+        scene.fog = new THREE.FogExp2(0x090716, 0.025);
+
+        const amb = new THREE.AmbientLight(0x8b5cf6, 0.65);
+        const key = new THREE.DirectionalLight(0xf43f5e, 1.4);
+        key.position.set(14, 24, 12);
+        worldGroup.add(amb, key);
+
+        const floor = new THREE.Mesh(
+          new THREE.CircleGeometry(45, 48),
+          new THREE.MeshStandardMaterial({ map: Textures.lobbyFloor(), roughness: 0.35, metalness: 0.3 })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        worldGroup.add(floor);
+
+        // Silueta épica de Flako y pilares iluminados en el fondo del menú
+        const flakoPreview = createMonsterMesh('flako');
+        flakoPreview.position.set(0, 0, -4);
+        flakoPreview.scale.set(1.25, 1.25, 1.25);
+        worldGroup.add(flakoPreview);
+
+        const auraColors = [0xa855f7, 0xeab308, 0x22c55e, 0xef4444];
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          const pillar = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.75, 0.9, 12, 10),
+            new THREE.MeshStandardMaterial({ color: 0x16192c, roughness: 0.4, metalness: 0.4 })
+          );
+          pillar.position.set(Math.cos(ang) * 14, 6, Math.sin(ang) * 14);
+          worldGroup.add(pillar);
+
+          const light = new THREE.PointLight(auraColors[i % 4], 1.8, 18);
+          light.position.set(Math.cos(ang) * 11, 4, Math.sin(ang) * 11);
+          worldGroup.add(light);
+        }
+
+        playerRig.visible = false;
+        fpGroup.visible = false;
+      }
+
+      /* --- ESCENA DEL LOBBY 3D (TARIMA CIRCULAR + ESCALERA ELEGANTE + 4 AURAS) --- */
+      function buildLobby() {
+        clearWorld();
+        state.mode = 'LOBBY';
+        scene.background = new THREE.Color(0x080a16);
+        scene.fog = new THREE.FogExp2(0x0a0d1c, 0.015);
+
+        const amb = new THREE.AmbientLight(0xb4c6fc, 0.65);
+        const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+        dir.position.set(16, 30, 14);
+        dir.castShadow = true;
+        dir.shadow.mapSize.set(1024, 1024);
+        worldGroup.add(amb, dir);
+
+        // Gran salón circular
+        const hallRadius = 32;
+        const floor = new THREE.Mesh(
+          new THREE.CircleGeometry(hallRadius, 64),
+          new THREE.MeshStandardMaterial({ map: Textures.lobbyFloor(), roughness: 0.3, metalness: 0.35 })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        worldGroup.add(floor);
+
+        // Muro circular exterior + 12 columnas luminosas
+        const wallCyl = new THREE.Mesh(
+          new THREE.CylinderGeometry(hallRadius, hallRadius, 16, 48, 1, true),
+          new THREE.MeshStandardMaterial({ color: 0x101426, roughness: 0.6, side: THREE.BackSide })
+        );
+        wallCyl.position.y = 8;
+        worldGroup.add(wallCyl);
+
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2;
+          const px = Math.cos(a) * (hallRadius - 1.4);
+          const pz = Math.sin(a) * (hallRadius - 1.4);
+          const col = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.7, 0.85, 16, 12),
+            new THREE.MeshStandardMaterial({ color: 0x1b213b, roughness: 0.35, metalness: 0.5 })
+          );
+          col.position.set(px, 8, pz);
+          worldGroup.add(col);
+
+          const strip = new THREE.Mesh(
+            new THREE.BoxGeometry(0.18, 12, 0.18),
+            new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0xa855f7 : 0x38bdf8 })
+          );
+          strip.position.set(Math.cos(a) * (hallRadius - 2.2), 7, Math.sin(a) * (hallRadius - 2.2));
+          worldGroup.add(strip);
+        }
+
+        // TARIMA CIRCULAR ELEVADA donde aparece el usuario
+        const platformY = 2.6;
+        const platformZ = 14;
+        const platformR = 6.2;
+
+        const tarima = new THREE.Mesh(
+          new THREE.CylinderGeometry(platformR, platformR + 0.6, platformY, 40),
+          new THREE.MeshStandardMaterial({ color: 0x1d233d, roughness: 0.25, metalness: 0.5 })
+        );
+        tarima.position.set(0, platformY / 2, platformZ);
+        tarima.receiveShadow = true;
+        tarima.castShadow = true;
+        worldGroup.add(tarima);
+
+        const trimRing = new THREE.Mesh(
+          new THREE.TorusGeometry(platformR + 0.05, 0.14, 12, 48),
+          new THREE.MeshBasicMaterial({ color: 0xc084fc })
+        );
+        trimRing.rotation.x = Math.PI / 2;
+        trimRing.position.set(0, platformY + 0.03, platformZ);
+        worldGroup.add(trimRing);
+
+        // ESCALERA ELEGANTE BAJANDO DE LA TARIMA (hacia Z negativo, al centro de las auras)
+        const steps = 10;
+        const stepWidth = 5.4;
+        const stairStartZ = platformZ - platformR + 0.4;
+        const stairLength = 7.2;
+
+        for (let i = 0; i < steps; i++) {
+          const frac = i / steps;
+          const h = platformY * (1 - frac);
+          const stepMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(stepWidth, h, stairLength / steps + 0.15),
+            new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0x262f52 : 0x1e2642, roughness: 0.3, metalness: 0.4 })
+          );
+          stepMesh.position.set(0, h / 2, stairStartZ - (i + 0.5) * (stairLength / steps));
+          stepMesh.receiveShadow = true;
+          worldGroup.add(stepMesh);
+
+          // Luz elegante en el borde de cada escalón
+          const edgeGlow = new THREE.Mesh(
+            new THREE.BoxGeometry(stepWidth - 0.3, 0.05, 0.08),
+            new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+          );
+          edgeGlow.position.set(0, h + 0.02, stairStartZ - (i + 1) * (stairLength / steps) + 0.06);
+          worldGroup.add(edgeGlow);
+        }
+
+        // Barandales elegantes dorados/neón en la escalera
+        [-stepWidth / 2 - 0.15, stepWidth / 2 + 0.15].forEach((rx) => {
+          const rail = new THREE.Mesh(
+            new THREE.BoxGeometry(0.18, 0.18, stairLength + 1.2),
+            new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.8, roughness: 0.2 })
+          );
+          rail.position.set(rx, platformY / 2 + 1.0, stairStartZ - stairLength / 2);
+          rail.rotation.x = Math.atan2(platformY, stairLength);
+          worldGroup.add(rail);
+        });
+
+        // Guardar datos de elevación de tarima y escalera
+        state.lobbyElevation = { platformY, platformZ, platformR, stairStartZ, stairLength, stepWidth };
+
+        // LOS 4 ESPACIOS CIRCULARES CON AURA (MORADO, AMARILLO, VERDE Y ROJO)
+        const portalDefs = [
+          { id: 'kill_flako', title: 'KILL FLAKO', subtitle: 'MODO ACTIVO • 3 ESCENARIOS', color: 0xa855f7, css: '#c084fc', x: -12, z: -8 },
+          { id: 'david',      title: 'JUGANDO CON DAVID', subtitle: 'PRÓXIMAMENTE (INACTIVO)', color: 0xeab308, css: '#facc15', x: -4,  z: -14 },
+          { id: 'exit',       title: 'SALIR', subtitle: 'VOLVER AL MENÚ PRINCIPAL', color: 0x22c55e, css: '#4ade80', x: 4,   z: -14 },
+          { id: 'config',     title: 'CONFIGURACIÓN', subtitle: 'VOLUMEN • CONTROLES • CÁMARA', color: 0xef4444, css: '#f87171', x: 12,  z: -8 }
+        ];
+
+        portalDefs.forEach((p) => {
+          const pg = new THREE.Group();
+          pg.position.set(p.x, 0.04, p.z);
+
+          const baseDisk = new THREE.Mesh(
+            new THREE.CircleGeometry(3.1, 36),
+            new THREE.MeshBasicMaterial({ color: p.color, transparent: true, opacity: 0.22 })
+          );
+          baseDisk.rotation.x = -Math.PI / 2;
+          pg.add(baseDisk);
+
+          const outerRing = new THREE.Mesh(
+            new THREE.TorusGeometry(3.1, 0.14, 10, 42),
+            new THREE.MeshBasicMaterial({ color: p.color })
+          );
+          outerRing.rotation.x = Math.PI / 2;
+          pg.add(outerRing);
+
+          const innerRing = new THREE.Mesh(
+            new THREE.TorusGeometry(2.1, 0.08, 10, 36),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })
+          );
+          innerRing.rotation.x = Math.PI / 2;
+          innerRing.position.y = 0.06;
+          pg.add(innerRing);
+
+          // Haz de luz vertical del aura
+          const beam = new THREE.Mesh(
+            new THREE.CylinderGeometry(2.6, 3.0, 9.5, 24, 1, true),
+            new THREE.MeshBasicMaterial({ color: p.color, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false })
+          );
+          beam.position.y = 4.75;
+          pg.add(beam);
+
+          const pl = new THREE.PointLight(p.color, 2.2, 14);
+          pl.position.set(0, 2.4, 0);
+          pg.add(pl);
+
+          worldGroup.add(pg);
+
+          // Etiqueta flotante nítida sobre el aura
+          const el = document.createElement('div');
+          el.className = 'world-label text-center';
+          el.innerHTML = `
+            <div class="px-3.5 py-1.5 rounded-2xl bg-slate-950/85 border shadow-lg" style="border-color:${p.css}88">
+              <div class="font-display font-bold text-sm sm:text-base tracking-wider text-white">${p.title}</div>
+              <div class="text-[10px] font-semibold" style="color:${p.css}">${p.subtitle}</div>
+            </div>`;
+          labelsLayer.appendChild(el);
+
+          state.portals.push({
+            ...p,
+            mesh: pg,
+            outerRing,
+            innerRing,
+            beam,
+            labelEl: el,
+            radius: 3.3
+          });
+        });
+
+        // Posicionar jugador arriba de la tarima mirando hacia la escalera y las auras
+        state.player.pos.set(0, platformY, platformZ);
+        state.player.vel.set(0, 0, 0);
+        state.player.yaw = 0; // Mirando hacia -Z
+        state.player.pitch = -0.1;
+
+        refreshEquippedWeaponVisuals();
+        updateHUDMode();
+      }
+
+      /* --- TORRE FINAL CON 2 CAÑONES ANIMADOS DE GRAN PODER --- */
+      function buildTower(zPos = -42) {
+        const towerGroup = new THREE.Group();
+        towerGroup.position.set(0, 0, zPos);
+        worldGroup.add(towerGroup);
+
+        const deckY = 7.4;
+        const deckW = 13;
+        const deckD = 12;
+
+        const matTower = new THREE.MeshStandardMaterial({ color: 0x1e2436, roughness: 0.45, metalness: 0.45 });
+        const matTrim = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.35, metalness: 0.65 });
+        const matGlowCyan = new THREE.MeshBasicMaterial({ color: 0x22d3ee });
+        const matGlowGold = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+
+        // Base fortificada de la torre
+        const base = new THREE.Mesh(new THREE.BoxGeometry(deckW, deckY, deckD), matTower);
+        base.position.y = deckY / 2;
+        base.castShadow = true;
+        base.receiveShadow = true;
+        towerGroup.add(base);
+
+        // Barandillas luminosas de la plataforma superior
+        const railBack = new THREE.Mesh(new THREE.BoxGeometry(deckW, 1.1, 0.4), matTrim);
+        railBack.position.set(0, deckY + 0.55, -deckD / 2 + 0.2);
+        towerGroup.add(railBack);
+
+        [-deckW / 2 + 0.2, deckW / 2 - 0.2].forEach((rx) => {
+          const sideRail = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.1, deckD), matTrim);
+          sideRail.position.set(rx, deckY + 0.55, 0);
+          towerGroup.add(sideRail);
+        });
+
+        // Rampa ancha subiendo desde el frente (+Z) hacia la plataforma superior
+        const rampLen = 15.5;
+        const rampW = 5.2;
+        const rampSteps = 16;
+        for (let i = 0; i < rampSteps; i++) {
+          const frac = (i + 1) / rampSteps;
+          const h = deckY * frac;
+          const st = new THREE.Mesh(
+            new THREE.BoxGeometry(rampW, h, rampLen / rampSteps + 0.1),
+            new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0x28324a : 0x1f273b, roughness: 0.5 })
+          );
+          const sz = deckD / 2 + rampLen - (i + 0.5) * (rampLen / rampSteps);
+          st.position.set(0, h / 2, sz);
+          st.receiveShadow = true;
+          towerGroup.add(st);
+
+          if (i % 3 === 0) {
+            const strip = new THREE.Mesh(new THREE.BoxGeometry(rampW - 0.3, 0.06, 0.12), matGlowCyan);
+            strip.position.set(0, h + 0.04, sz + 0.3);
+            towerGroup.add(strip);
+          }
+        }
+
+        // Faro celeste/dorado hacia el cielo para guiar al jugador desde todo el mapa
+        const beacon = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.45, 1.2, 55, 16, 1, true),
+          new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false })
+        );
+        beacon.position.set(0, deckY + 27.5, -2);
+        towerGroup.add(beacon);
+
+        const beaconLight = new THREE.PointLight(0x22d3ee, 3.0, 28);
+        beaconLight.position.set(0, deckY + 5, 0);
+        towerGroup.add(beaconLight);
+
+        // Consola central de disparo en la cima
+        const consoleMesh = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.3, 1.1), matTrim);
+        consoleMesh.position.set(0, deckY + 0.65, 2.2);
+        const screen = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.55, 0.1), matGlowGold);
+        screen.position.set(0, deckY + 1.05, 2.74);
+        screen.rotation.x = -0.35;
+        towerGroup.add(consoleMesh, screen);
+
+        // 2 CAÑONES ANIMADOS DE GRAN PODER (izquierdo y derecho)
+        function createSuperCannon(offsetX) {
+          const mount = new THREE.Group();
+          mount.position.set(offsetX, deckY + 0.2, 0.5);
+
+          const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.4, 1.2, 12), matTrim);
+          pedestal.position.y = 0.6;
+          mount.add(pedestal);
+
+          const turretYaw = new THREE.Group();
+          turretYaw.position.y = 1.45;
+          mount.add(turretYaw);
+
+          const housing = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.2, 2.2), matTower);
+          turretYaw.add(housing);
+
+          const barrelGroup = new THREE.Group();
+          barrelGroup.position.set(0, 0.05, 1.1);
+          turretYaw.add(barrelGroup);
+
+          // Cañones dobles giratorios
+          const barrelA = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 3.4, 12), matTrim);
+          barrelA.rotation.x = Math.PI / 2;
+          barrelA.position.set(-0.36, 0, 1.5);
+
+          const barrelB = barrelA.clone();
+          barrelB.position.x = 0.36;
+
+          // Anillos de bobina de energía giratorios
+          const coils = [];
+          for (let c = 0; c < 3; c++) {
+            const coil = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.09, 8, 20), c % 2 === 0 ? matGlowCyan : matGlowGold);
+            coil.position.set(0, 0, 0.8 + c * 0.9);
+            coils.push(coil);
+            barrelGroup.add(coil);
+          }
+
+          const muzzleOrb = new THREE.Mesh(
+            new THREE.SphereGeometry(0.45, 12, 12),
+            new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.7 })
+          );
+          muzzleOrb.position.set(0, 0, 3.25);
+          barrelGroup.add(barrelA, barrelB, muzzleOrb);
+
+          towerGroup.add(mount);
+          return { mount, turretYaw, barrelGroup, coils, muzzleOrb, recoil: 0 };
+        }
+
+        const cannons = [createSuperCannon(-4.2), createSuperCannon(4.2)];
+
+        // Etiqueta flotante de la Torre
+        const labelEl = document.createElement('div');
+        labelEl.className = 'world-label text-center';
+        labelEl.innerHTML = `
+          <div class="px-3 py-1 rounded-xl bg-cyan-950/90 border border-cyan-400/60 shadow-lg">
+            <div class="font-display font-bold text-xs sm:text-sm text-cyan-200">🗼 TORRE DE CAÑONES</div>
+          </div>`;
+        labelsLayer.appendChild(labelEl);
+
+        state.tower = {
+          x: 0,
+          z: zPos,
+          deckY,
+          deckW,
+          deckD,
+          rampLen,
+          rampW,
+          cannons,
+          beacon,
+          consolePos: new THREE.Vector3(0, deckY, zPos + 2.2),
+          cooldown: 0,
+          charging: false,
+          chargeTimer: 0,
+          labelEl
+        };
+      }
+
+      /* --- ESCENARIO DE COMBATE "KILL FLAKO" (3 MAPAS DISTINTOS) --- */
+      function startKillFlako(scenarioKey) {
+        clearWorld();
+        state.scenario = scenarioKey;
+        state.mode = 'PLAYING';
+        state.matchTime = 0;
+        state.kills = 0;
+        state.cannonShots = 0;
+        state.player.hp = 100;
+        state.player.pos.set(0, 0, 42);
+        state.player.vel.set(0, 0, 0);
+        state.player.yaw = 0;
+        state.player.pitch = 0;
+        state.player.activeWeaponIdx = 1;
+
+        // Reiniciar estado inicial de armas (Cuchillo y Pistola desbloqueados; resto en el mapa)
+        WEAPONS.forEach((w, idx) => {
+          if (idx === 0) { w.unlocked = true; w.ammo = Infinity; }
+          else if (idx === 1) { w.unlocked = true; w.ammo = 54; }
+          else { w.unlocked = false; w.ammo = 0; }
+        });
+
+        const half = 54;
+
+        // Configuración atmosférica y arquitectónica por escenario
+        if (scenarioKey === 'terror') {
+          scene.background = new THREE.Color(0x09070c);
+          scene.fog = new THREE.FogExp2(0x100b14, 0.022);
+
+          const amb = new THREE.AmbientLight(0x523c63, 0.55);
+          const moon = new THREE.DirectionalLight(0x93c5fd, 0.75);
+          moon.position.set(22, 36, 18);
+          moon.castShadow = true;
+          worldGroup.add(amb, moon);
+
+          const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(half * 2, half * 2),
+            new THREE.MeshStandardMaterial({ map: Textures.terrorGround(), roughness: 0.92 })
+          );
+          ground.rotation.x = -Math.PI / 2;
+          ground.receiveShadow = true;
+          worldGroup.add(ground);
+
+          const wallMat = new THREE.MeshStandardMaterial({ map: Textures.stoneWall(), roughness: 0.85 });
+          // Muros en ruinas y sepulcros
+          const ruins = [
+            [-18, 2.5, 18, 9, 5, 1.5], [18, 2.5, 18, 9, 5, 1.5],
+            [-26, 3, -4, 1.8, 6, 12], [26, 3, -4, 1.8, 6, 12],
+            [-10, 2, -12, 7, 4, 1.8], [10, 2, -12, 7, 4, 1.8],
+            [0, 2.2, 6, 6, 4.4, 2]
+          ];
+          ruins.forEach(r => addObstacleBox(...r, wallMat));
+
+          // Árboles muertos y faroles rojos/ámbar parpadeantes
+          const trunkMat = new THREE.MeshStandardMaterial({ color: 0x231a18, roughness: 0.95 });
+          const lanternCoords = [[-16, 28], [16, 28], [-22, 4], [22, 4], [-14, -22], [14, -22]];
+          lanternCoords.forEach(([lx, lz], i) => {
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 5.2, 8), trunkMat);
+            post.position.set(lx, 2.6, lz);
+            worldGroup.add(post);
+
+            const bulbColor = i % 2 === 0 ? 0xef4444 : 0xf59e0b;
+            const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), new THREE.MeshBasicMaterial({ color: bulbColor }));
+            bulb.position.set(lx, 5.3, lz);
+            worldGroup.add(bulb);
+
+            const pl = new THREE.PointLight(bulbColor, 2.2, 22);
+            pl.position.set(lx, 5.0, lz);
+            worldGroup.add(pl);
+            state.flickerLights.push({ light: pl, base: 2.2, seed: i * 1.7 });
+
+            // Árbol seco cercano
+            const tree = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.55, 7.5, 7), trunkMat);
+            tree.position.set(lx + (lx > 0 ? 7 : -7), 3.7, lz + 4);
+            tree.rotation.z = (i % 2 === 0 ? 0.1 : -0.1);
+            worldGroup.add(tree);
+          });
+
+        } else if (scenarioKey === 'school') {
+          scene.background = new THREE.Color(0x09111a);
+          scene.fog = new THREE.FogExp2(0x0d1722, 0.02);
+
+          const amb = new THREE.AmbientLight(0x7dd3fc, 0.55);
+          const dir = new THREE.DirectionalLight(0xbae6fd, 0.72);
+          dir.position.set(-18, 34, 20);
+          dir.castShadow = true;
+          worldGroup.add(amb, dir);
+
+          const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(half * 2, half * 2),
+            new THREE.MeshStandardMaterial({ map: Textures.schoolTile(), roughness: 0.45, metalness: 0.15 })
+          );
+          ground.rotation.x = -Math.PI / 2;
+          ground.receiveShadow = true;
+          worldGroup.add(ground);
+
+          const lockerMat = new THREE.MeshStandardMaterial({ color: 0x334e68, roughness: 0.4, metalness: 0.65 });
+          const wallMat = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.8 });
+          const boardMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.9 });
+          const deskMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.75 });
+
+          // Filas de casilleros y muros de aulas con pizarras
+          const schoolBlocks = [
+            [-22, 2.2, 18, 2.2, 4.4, 14, lockerMat],
+            [22, 2.2, 18, 2.2, 4.4, 14, lockerMat],
+            [-14, 2.8, -6, 12, 5.6, 1.5, wallMat],
+            [14, 2.8, -6, 12, 5.6, 1.5, wallMat],
+            [-28, 2.2, -18, 2.2, 4.4, 12, lockerMat],
+            [28, 2.2, -18, 2.2, 4.4, 12, lockerMat]
+          ];
+          schoolBlocks.forEach(([x, y, z, w, h, d, m]) => addObstacleBox(x, y, z, w, h, d, m));
+
+          // Pizarras en las paredes del colegio
+          [-14, 14].forEach((bx) => {
+            const board = new THREE.Mesh(new THREE.BoxGeometry(6.5, 2.2, 0.2), boardMat);
+            board.position.set(bx, 3.0, -5.1);
+            worldGroup.add(board);
+          });
+
+          // Pupitres volcados y luces fluorescentes frías parpadeantes
+          for (let i = 0; i < 10; i++) {
+            const dx = ((i % 2 === 0 ? -1 : 1) * (5 + (i * 3) % 16));
+            const dz = 28 - i * 5.2;
+            const desk = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.9, 1.2), deskMat);
+            desk.position.set(dx, 0.55, dz);
+            desk.rotation.set(0.35, i * 0.8, 0.5);
+            worldGroup.add(desk);
+          }
+
+          [[-12, 20], [12, 20], [0, 4], [-14, -18], [14, -18]].forEach(([fx, fz], i) => {
+            const tube = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.18, 0.35), new THREE.MeshBasicMaterial({ color: 0xbae6fd }));
+            tube.position.set(fx, 7.5, fz);
+            worldGroup.add(tube);
+            const fl = new THREE.PointLight(0x7dd3fc, 2.1, 24);
+            fl.position.set(fx, 6.8, fz);
+            worldGroup.add(fl);
+            state.flickerLights.push({ light: fl, base: 2.1, seed: i * 2.3, harsh: true });
+          });
+
+        } else {
+          // SUPERMERCADO BOMBARDEADO
+          scene.background = new THREE.Color(0x160d09);
+          scene.fog = new THREE.FogExp2(0x1f130d, 0.021);
+
+          const amb = new THREE.AmbientLight(0xfdba74, 0.55);
+          const dir = new THREE.DirectionalLight(0xfb923c, 0.85);
+          dir.position.set(20, 32, 10);
+          dir.castShadow = true;
+          worldGroup.add(amb, dir);
+
+          const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(half * 2, half * 2),
+            new THREE.MeshStandardMaterial({ map: Textures.marketFloor(), roughness: 0.9 })
+          );
+          ground.rotation.x = -Math.PI / 2;
+          ground.receiveShadow = true;
+          worldGroup.add(ground);
+
+          const shelfMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.5, metalness: 0.55 });
+          const crateMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.85 });
+
+          // Estanterías de supermercado (algunas intactas, otras inclinadas por bombardeo)
+          const aisles = [
+            [-22, 2.2, 18, 2.2, 4.4, 15], [22, 2.2, 18, 2.2, 4.4, 15],
+            [-11, 2.2, 2, 2.2, 4.4, 14],  [11, 2.2, 2, 2.2, 4.4, 14],
+            [-24, 2.2, -16, 2.2, 4.4, 12], [24, 2.2, -16, 2.2, 4.4, 12]
+          ];
+          aisles.forEach(a => addObstacleBox(...a, shelfMat));
+
+          // Cajas dispersas y vigas caídas del techo
+          for (let i = 0; i < 12; i++) {
+            const cx = (i % 2 === 0 ? -1 : 1) * (4 + (i * 5) % 24);
+            const cz = 26 - i * 4.5;
+            const crate = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.3, 1.7), crateMat);
+            crate.position.set(cx, 0.65, cz);
+            crate.rotation.y = i * 0.6;
+            worldGroup.add(crate);
+          }
+
+          // Cráteres humeantes con brillo de fuego naranja
+          [[-14, 24], [15, 12], [0, -10], [-16, -24], [16, -24]].forEach(([fx, fz], i) => {
+            const crater = new THREE.Mesh(
+              new THREE.CircleGeometry(3.2, 18),
+              new THREE.MeshBasicMaterial({ color: 0x1c0a05 })
+            );
+            crater.rotation.x = -Math.PI / 2;
+            crater.position.set(fx, 0.04, fz);
+            worldGroup.add(crater);
+
+            const ember = new THREE.Mesh(
+              new THREE.CircleGeometry(1.5, 14),
+              new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.8 })
+            );
+            ember.rotation.x = -Math.PI / 2;
+            ember.position.set(fx, 0.06, fz);
+            worldGroup.add(ember);
+
+            const fireLight = new THREE.PointLight(0xf97316, 2.8, 22);
+            fireLight.position.set(fx, 1.8, fz);
+            worldGroup.add(fireLight);
+            state.flickerLights.push({ light: fireLight, base: 2.8, seed: i * 1.4 });
+          });
+        }
+
+        // Muros perimetrales de la arena (el jugador nunca puede caerse del mapa)
+        const borderMat = new THREE.MeshStandardMaterial({ color: 0x161922, roughness: 0.8 });
+        addObstacleBox(0, 5, -half, half * 2, 10, 2, borderMat, false);
+        addObstacleBox(0, 5, half, half * 2, 10, 2, borderMat, false);
+        addObstacleBox(-half, 5, 0, 2, 10, half * 2, borderMat, false);
+        addObstacleBox(half, 5, 0, 2, 10, half * 2, borderMat, false);
+
+        // Construir la TORRE FINAL con los 2 cañones animados
+        buildTower(-41);
+
+        // Generar recogibles: las 5 armas + botiquines de vida extra + cuchillos en el mapa (para Mod 4)
+        spawnArenaPickups();
+
+        // Generar los 7 MONSTRUOS (Flako + Mod 1..5 + Mod 6)
+        spawnSevenMonsters();
+
+        refreshEquippedWeaponVisuals();
+        updateHUDMode();
+        showToast('¡Elimina a los 7 monstruos o llega a la Torre para disparar los Cañones!', 4200);
+      }
+
+      /* --- GENERACIÓN DE ARMAS, BOTIQUINES Y CUCHILLOS DEL MAPA --- */
+      function spawnArenaPickups() {
+        const weaponDrops = [
+          { weaponIdx: 2, x: -16, z: 26 }, // Escopeta
+          { weaponIdx: 3, x: 16,  z: 22 }, // Rifle de Asalto
+          { weaponIdx: 4, x: 0,   z: -2 }, // Lanzador Plasma
+          { weaponIdx: 1, x: -24, z: -8 }, // Munición Pistola
+          { weaponIdx: 2, x: 24,  z: -10 }, // Escopeta / Munición
+          { weaponIdx: 3, x: -12, z: -22 }, // Rifle / Munición
+          { weaponIdx: 4, x: 14,  z: -22 }  // Plasma / Munición
+        ];
+
+        weaponDrops.forEach((d) => {
+          const w = WEAPONS[d.weaponIdx];
+          const pg = new THREE.Group();
+          pg.position.set(d.x, 0.9, d.z);
+
+          const ped = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.85, 1.0, 0.22, 16),
+            new THREE.MeshBasicMaterial({ color: w.color, transparent: true, opacity: 0.45 })
+          );
+          ped.position.y = -0.82;
+          pg.add(ped);
+
+          const model = buildWeaponMesh(w.id);
+          model.scale.set(1.6, 1.6, 1.6);
+          pg.add(model);
+
+          worldGroup.add(pg);
+          state.pickups.push({ type: 'weapon', weaponIdx: d.weaponIdx, mesh: pg, spinMesh: model, pos: new THREE.Vector3(d.x, 0.9, d.z), collected: false });
+        });
+
+        // Botiquines / Orbes de vida extra (curan y dan escudo hasta 150 HP)
+        const medSpots = [[-26, 26], [26, 26], [-18, 2], [18, 2], [0, 18], [-22, -26], [22, -26]];
+        medSpots.forEach(([mx, mz]) => {
+          const mg = new THREE.Group();
+          mg.position.set(mx, 0.85, mz);
+
+          const box = new THREE.Mesh(
+            new THREE.BoxGeometry(0.8, 0.65, 0.8),
+            new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x059669, emissiveIntensity: 0.55 })
+          );
+          const crossA = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.84), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+          const crossB = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, 0.84), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+          mg.add(box, crossA, crossB);
+          worldGroup.add(mg);
+
+          state.pickups.push({ type: 'health', mesh: mg, spinMesh: mg, pos: new THREE.Vector3(mx, 0.85, mz), collected: false });
+        });
+
+        // Cuchillos tirados en el mapa (Mod 4 estilo Chucky los busca para potenciarse)
+        const knifeSpots = [[-8, 14], [10, 10], [-6, -16], [8, -16]];
+        knifeSpots.forEach(([kx, kz]) => {
+          const kg = new THREE.Group();
+          kg.position.set(kx, 0.4, kz);
+          const km = buildWeaponMesh('knife');
+          km.scale.set(1.8, 1.8, 1.8);
+          const glow = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.65, 16), new THREE.MeshBasicMaterial({ color: 0xf43f5e, side: THREE.DoubleSide }));
+          glow.rotation.x = -Math.PI / 2;
+          glow.position.y = -0.35;
+          kg.add(km, glow);
+          worldGroup.add(kg);
+
+          state.mapKnives.push({ mesh: kg, spinMesh: km, pos: new THREE.Vector3(kx, 0.4, kz), taken: false });
+        });
+      }
+
+      /* --- GENERACIÓN DE LOS 7 MONSTRUOS --- */
+      function spawnSevenMonsters() {
+        const defs = [
+          { type: 'flako', name: 'FLAKO (JEFE)',        hp: 950, speed: 4.9, damage: 22, range: 3.4, height: 3.9, x: 0,   z: -24, boss: true,  color: '#ef4444' },
+          { type: 'mod1',  name: 'MOD 1 • Cabeza Grande', hp: 420, speed: 4.5, damage: 14, range: 18,  height: 3.9, x: -24, z: -12, boss: false, color: '#facc15' },
+          { type: 'mod2',  name: 'MOD 2 • Súper Lengua',  hp: 400, speed: 5.2, damage: 16, range: 8.5, height: 2.9, x: 24,  z: -12, boss: false, color: '#f43f5e' },
+          { type: 'mod3',  name: 'MOD 3 • Cabeza Cuadrada', hp: 440, speed: 4.8, damage: 15, range: 20, height: 3.8, x: -28, z: 8,   boss: false, color: '#22d3ee' },
+          { type: 'mod4',  name: 'MOD 4 • Estilo Chucky', hp: 360, speed: 6.3, damage: 13, range: 2.6, height: 1.9, x: 28,  z: 8,   boss: false, color: '#f97316' },
+          { type: 'mod5',  name: 'MOD 5 • Traje Elegante', hp: 460, speed: 6.0, damage: 18, range: 3.0, height: 3.1, x: -16, z: -28, boss: false, color: '#e2e8f0' },
+          { type: 'mod6',  name: 'MOD 6 • Sombra de Flako', hp: 430, speed: 5.7, damage: 15, range: 3.2, height: 3.3, x: 16,  z: -28, boss: false, color: '#c084fc' }
+        ];
+
+        defs.forEach((d) => {
+          const mesh = createMonsterMesh(d.type);
+          mesh.position.set(d.x, 0, d.z);
+          worldGroup.add(mesh);
+
+          // Barra de vida flotante sobre el monstruo
+          const el = document.createElement('div');
+          el.className = 'world-label';
+          el.innerHTML = `
+            <div class="px-2.5 py-1 rounded-xl bg-black/80 border border-white/15 min-w-[110px]">
+              <div class="text-[10px] font-bold tracking-wide text-center truncate" style="color:${d.color}">${d.name}</div>
+              <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-0.5">
+                <div class="hp-fill h-full transition-all duration-100" style="width:100%; background:${d.color}"></div>
+              </div>
+            </div>`;
+          labelsLayer.appendChild(el);
+
+          state.monsters.push({
+            ...d,
+            maxHp: d.hp,
+            mesh,
+            pos: new THREE.Vector3(d.x, 0, d.z),
+            alive: true,
+            attackCd: 1.0 + Math.random(),
+            specialCd: 3.0 + Math.random() * 2,
+            hasKnife: d.type === 'mod5',
+            tongueExtend: 0,
+            animPhase: Math.random() * 6,
+            hitFlash: 0,
+            labelEl: el,
+            hpFillEl: el.querySelector('.hp-fill')
+          });
+        });
+
+        document.getElementById('hud-monsters-left').textContent = state.monsters.length;
+      }
+
+      /* ==========================================================
+         I. COMBATE, PROYECTILES, EFECTOS Y CAÑONES DE LA TORRE
+      =========================================================== */
+      function spawnExplosion(pos, color = 0xc084fc, maxScale = 6.5) {
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(0.4, 0.9, 24),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(pos.x, Math.max(0.15, pos.y), pos.z);
+        worldGroup.add(ring);
+
+        const sphere = new THREE.Mesh(
+          new THREE.SphereGeometry(0.8, 14, 12),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.75 })
+        );
+        sphere.position.copy(pos);
+        worldGroup.add(sphere);
+
+        state.effects.push({ type: 'explosion', ring, sphere, age: 0, duration: 0.55, maxScale });
+      }
+
+      function spawnBeam(from, to, color = 0x22d3ee, radius = 0.25, duration = 0.2) {
+        const dist = from.distanceTo(to);
+        const geo = new THREE.CylinderGeometry(radius, radius, dist, 10, 1, true);
+        geo.rotateX(Math.PI / 2);
+        const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92 });
+        const beam = new THREE.Mesh(geo, mat);
+        beam.position.copy(from).lerp(to, 0.5);
+        beam.lookAt(to);
+        worldGroup.add(beam);
+        state.effects.push({ type: 'beam', mesh: beam, age: 0, duration });
+      }
+
+      function damageMonster(m, dmg, knockDir = null) {
+        if (!m.alive) return;
+        m.hp -= dmg;
+        m.hitFlash = 0.14;
+        sound.playHit();
+
+        if (knockDir) {
+          m.pos.addScaledVector(knockDir, m.boss ? 0.35 : 0.85);
+        }
+
+        const pct = Math.max(0, (m.hp / m.maxHp) * 100);
+        m.hpFillEl.style.width = pct + '%';
+
+        if (m.hp <= 0) {
+          m.alive = false;
+          worldGroup.remove(m.mesh);
+          m.labelEl.remove();
+          spawnExplosion(new THREE.Vector3(m.pos.x, 1.5, m.pos.z), 0xef4444, m.boss ? 9.5 : 5.0);
+          sound.playMonsterDeath();
+
+          state.kills++;
+          const remaining = state.monsters.filter(x => x.alive).length;
+          document.getElementById('hud-monsters-left').textContent = remaining;
+          showToast(`☠ ¡Eliminaste a ${m.name}! (${remaining} restantes)`, 2600);
+
+          if (remaining === 0) {
+            triggerEndGame(true);
+          }
+        }
+      }
+
+      function damagePlayer(amount) {
+        if (state.mode !== 'PLAYING' || state.player.hurtTimer > 0) return;
+        state.player.hp = Math.max(0, state.player.hp - amount);
+        state.player.hurtTimer = 0.42;
+        state.cameraShake = Math.max(state.cameraShake, 0.35);
+        sound.playHurt();
+
+        const vig = document.getElementById('damage-vignette');
+        vig.style.opacity = '1';
+        setTimeout(() => { vig.style.opacity = '0'; }, 180);
+
+        updateHealthHUD();
+
+        if (state.player.hp <= 0) {
+          triggerEndGame(false);
+        }
+      }
+
+      function fireActiveWeapon() {
+        if (state.mode !== 'PLAYING' || state.paused || state.modalOpen) return;
+        const w = WEAPONS[state.player.activeWeaponIdx];
+        if (!w || !w.unlocked || state.player.fireTimer > 0) return;
+        if (!w.melee && w.ammo <= 0) {
+          showToast('Sin munición — cambia de arma o recoge munición en el mapa', 1800);
+          return;
+        }
+
+        state.player.fireTimer = w.cooldown;
+        state.player.recoil = w.melee ? 0 : 0.16;
+        if (w.melee) state.player.knifeSlashAnim = 0.25;
+        if (!w.melee) w.ammo--;
+
+        sound.playWeapon(w.id);
+        renderWeaponsHUD();
+
+        // Origen y dirección del disparo desde la cámara
+        const origin = new THREE.Vector3();
+        const forward = new THREE.Vector3();
+        camera.getWorldPosition(origin);
+        camera.getWorldDirection(forward);
+
+        // Si es 3ª persona, empezar el rayo a la altura del personaje para precisión limpia
+        const muzzleStart = new THREE.Vector3(
+          state.player.pos.x,
+          state.player.pos.y + 1.48,
+          state.player.pos.z
+        ).addScaledVector(forward, 0.7);
+
+        if (w.melee) {
+          // Corte cuerpo a cuerpo con el cuchillo
+          state.monsters.forEach((m) => {
+            if (!m.alive) return;
+            const toM = new THREE.Vector3().subVectors(m.pos, state.player.pos);
+            const dist = toM.length();
+            if (dist <= w.range + (m.boss ? 1.2 : 0.5)) {
+              toM.y = 0;
+              toM.normalize();
+              const lookFlat = new THREE.Vector3(forward.x, 0, forward.z).normalize();
+              if (toM.dot(lookFlat) > 0.35) {
+                damageMonster(m, w.damage, toM);
+              }
+            }
+          });
+          return;
+        }
+
+        if (w.explosive) {
+          // Proyectil explosivo de Plasma
+          const orb = new THREE.Mesh(
+            new THREE.SphereGeometry(0.32, 10, 10),
+            new THREE.MeshBasicMaterial({ color: 0xc084fc })
+          );
+          orb.position.copy(muzzleStart);
+          worldGroup.add(orb);
+          state.projectiles.push({
+            fromPlayer: true,
+            explosive: true,
+            blastRadius: w.blastRadius,
+            damage: w.damage,
+            mesh: orb,
+            pos: muzzleStart.clone(),
+            vel: forward.clone().multiplyScalar(38),
+            life: 2.6
+          });
+          return;
+        }
+
+        // Disparos hitscan rápidos (Pistola, Escopeta, Rifle)
+        const pellets = w.pellets || 1;
+        for (let p = 0; p < pellets; p++) {
+          const dir = forward.clone();
+          dir.x += (Math.random() - 0.5) * w.spread;
+          dir.y += (Math.random() - 0.5) * w.spread;
+          dir.z += (Math.random() - 0.5) * w.spread;
+          dir.normalize();
+
+          let bestDist = w.range;
+          let hitMonster = null;
+
+          // Comprobar impacto contra cada monstruo (cápsula cilíndrica generosa)
+          state.monsters.forEach((m) => {
+            if (!m.alive) return;
+            const mCenter = new THREE.Vector3(m.pos.x, m.pos.y + m.height * 0.52, m.pos.z);
+            const toCenter = new THREE.Vector3().subVectors(mCenter, origin);
+            const t = toCenter.dot(dir);
+            if (t > 0 && t < bestDist) {
+              const closest = origin.clone().addScaledVector(dir, t);
+              const hitRadius = m.boss ? 1.65 : (m.type === 'mod4' ? 0.85 : 1.15);
+              if (closest.distanceTo(mCenter) <= hitRadius) {
+                bestDist = t;
+                hitMonster = m;
+              }
+            }
+          });
+
+          const endPoint = origin.clone().addScaledVector(dir, bestDist);
+          spawnBeam(muzzleStart, endPoint, w.color, 0.045, 0.08);
+
+          if (hitMonster) {
+            damageMonster(hitMonster, w.damage, new THREE.Vector3(dir.x, 0, dir.z).normalize());
+          }
+        }
+      }
+
+      /* --- DISPARO DE LOS CAÑONES ANIMADOS DE LA TORRE --- */
+      function triggerTowerCannons() {
+        const t = state.tower;
+        if (!t || t.charging || t.cooldown > 0) return;
+
+        const alive = state.monsters.filter(m => m.alive);
+        if (!alive.length) return;
+
+        t.charging = true;
+        t.chargeTimer = 1.15;
+        sound.playCannonCharge();
+        showToast('⚡ ¡CARGANDO CAÑONES DE GRAN PODER DE LA TORRE!', 1600);
+      }
+
+      function executeTowerCannonSalvo() {
+        const t = state.tower;
+        if (!t) return;
+        t.charging = false;
+        t.cooldown = 8.5;
+        state.cannonShots++;
+
+        // Priorizar a Flako si sigue vivo; si no, al monstruo más cercano
+        let target = state.monsters.find(m => m.alive && m.boss);
+        if (!target) {
+          target = state.monsters.filter(m => m.alive).sort((a, b) => a.pos.distanceTo(t.consolePos) - b.pos.distanceTo(t.consolePos))[0];
+        }
+        if (!target) return;
+
+        const impactPos = new THREE.Vector3(target.pos.x, target.pos.y + 1.6, target.pos.z);
+
+        // Disparar ambos cañones con retroceso y rayo mega-plasma
+        t.cannons.forEach((c) => {
+          c.recoil = 1.1;
+          const muzzleWorld = new THREE.Vector3();
+          c.muzzleOrb.getWorldPosition(muzzleWorld);
+          spawnBeam(muzzleWorld, impactPos, 0x22d3ee, 0.65, 0.65);
+          spawnBeam(muzzleWorld, impactPos, 0xfef08a, 0.28, 0.55);
+        });
+
+        // Onda expansiva colosal
+        spawnExplosion(impactPos, 0x22d3ee, 16);
+        spawnExplosion(impactPos, 0xfacc15, 11);
+        sound.playCannonBlast();
+        state.cameraShake = 0.85;
+
+        const flash = document.getElementById('cannon-flash');
+        flash.style.opacity = '1';
+        setTimeout(() => { flash.style.opacity = '0'; }, 300);
+
+        // Daño masivo al objetivo principal y a los monstruos cercanos
+        state.monsters.forEach((m) => {
+          if (!m.alive) return;
+          const d = m.pos.distanceTo(target.pos);
+          if (m === target) {
+            damageMonster(m, 460);
+          } else if (d < 15) {
+            damageMonster(m, 260);
+          }
+        });
+
+        showToast('💥 ¡IMPACTO DEVASTADOR DEL CAÑÓN DE LA TORRE!', 2500);
+      }
+
+      /* ==========================================================
+         J. FÍSICA, ELEVACIONES (TARIMA + TORRE) Y COLISIONES
+      =========================================================== */
+      function getFloorHeightAt(x, z) {
+        // Elevación en el Lobby (Tarima circular + Escalera elegante)
+        if (state.mode === 'LOBBY' && state.lobbyElevation) {
+          const { platformY, platformZ, platformR, stairStartZ, stairLength, stepWidth } = state.lobbyElevation;
+          const distCenter = Math.hypot(x, z - platformZ);
+          if (distCenter <= platformR + 0.25) return platformY;
+
+          if (Math.abs(x) <= stepWidth / 2 + 0.3 && z <= stairStartZ + 0.4 && z >= stairStartZ - stairLength - 0.4) {
+            const t = (stairStartZ - z) / stairLength;
+            return Math.max(0, Math.min(platformY, platformY * (1 - t)));
+          }
+          return 0;
+        }
+
+        // Elevación en la Torre Final (Rampa + Plataforma de Cañones)
+        if (state.mode === 'PLAYING' && state.tower) {
+          const tw = state.tower;
+          const inDeckX = Math.abs(x - tw.x) <= tw.deckW / 2 + 0.2;
+          const inDeckZ = Math.abs(z - tw.z) <= tw.deckD / 2 + 0.2;
+          if (inDeckX && inDeckZ) return tw.deckY;
+
+          const rampStartZ = tw.z + tw.deckD / 2 + tw.rampLen;
+          const rampEndZ = tw.z + tw.deckD / 2;
+          if (Math.abs(x - tw.x) <= tw.rampW / 2 + 0.35 && z <= rampStartZ + 0.3 && z >= rampEndZ - 0.4) {
+            const frac = (rampStartZ - z) / tw.rampLen;
+            return Math.max(0, Math.min(tw.deckY, tw.deckY * frac));
+          }
+        }
+        return 0;
+      }
+
+      function resolveCollisions(pos, radius) {
+        if (state.mode === 'LOBBY') {
+          const maxR = 30.2;
+          const d = Math.hypot(pos.x, pos.z);
+          if (d > maxR) {
+            pos.x = (pos.x / d) * maxR;
+            pos.z = (pos.z / d) * maxR;
+          }
+          return;
+        }
+
+        // Límites de arena de combate
+        const limit = 51.8;
+        pos.x = Math.max(-limit, Math.min(limit, pos.x));
+        pos.z = Math.max(-limit, Math.min(limit, pos.z));
+
+        // Colisión AABB con obstáculos del mapa
+        for (const o of state.obstacles) {
+          if (pos.y >= o.topY - 0.3) continue;
+          const closestX = Math.max(o.minX, Math.min(pos.x, o.maxX));
+          const closestZ = Math.max(o.minZ, Math.min(pos.z, o.maxZ));
+          const dx = pos.x - closestX;
+          const dz = pos.z - closestZ;
+          const distSq = dx * dx + dz * dz;
+          if (distSq < radius * radius) {
+            const dist = Math.sqrt(distSq) || 0.001;
+            const push = radius - dist;
+            pos.x += (dx / dist) * push;
+            pos.z += (dz / dist) * push;
+          }
+        }
+
+        // Evitar atravesar lateralmente la base de la torre si no estás arriba ni en la rampa
+        if (state.tower && pos.y < state.tower.deckY - 1.2) {
+          const tw = state.tower;
+          const halfW = tw.deckW / 2 + radius;
+          const halfD = tw.deckD / 2 + radius;
+          const inRampMouth = Math.abs(pos.x - tw.x) < tw.rampW / 2 + 0.2 && pos.z > tw.z + tw.deckD / 2 - 1;
+          if (!inRampMouth && Math.abs(pos.x - tw.x) < halfW && Math.abs(pos.z - tw.z) < halfD) {
+            const overlapX = halfW - Math.abs(pos.x - tw.x);
+            const overlapZ = halfD - Math.abs(pos.z - tw.z);
+            if (overlapX < overlapZ) {
+              pos.x += pos.x < tw.x ? -overlapX : overlapX;
+            } else {
+              pos.z += pos.z < tw.z ? -overlapZ : overlapZ;
+            }
+          }
+        }
+      }
+
+      /* ==========================================================
+         K. ACTUALIZACIÓN POR FRAME (JUGADOR, IA MONSTRUOS, TORRE, CÁMARA)
+      =========================================================== */
+      function updatePlayer(dt) {
+        const p = state.player;
+        if (p.fireTimer > 0) p.fireTimer -= dt;
+        if (p.hurtTimer > 0) p.hurtTimer -= dt;
+        if (p.recoil > 0) p.recoil = Math.max(0, p.recoil - dt * 1.1);
+        if (p.knifeSlashAnim > 0) p.knifeSlashAnim = Math.max(0, p.knifeSlashAnim - dt);
+
+        // Movimiento desde teclado + joystick táctil
+        let moveX = 0;
+        let moveZ = 0;
+        if (state.keys['KeyW'] || state.keys['ArrowUp']) moveZ += 1;
+        if (state.keys['KeyS'] || state.keys['ArrowDown']) moveZ -= 1;
+        if (state.keys['KeyD'] || state.keys['ArrowRight']) moveX += 1;
+        if (state.keys['KeyA'] || state.keys['ArrowLeft']) moveX -= 1;
+
+        if (state.joy.active) {
+          moveX += state.joy.x;
+          moveZ -= state.joy.y;
+        }
+
+        const len = Math.hypot(moveX, moveZ);
+        if (len > 1) { moveX /= len; moveZ /= len; }
+
+        const sprint = (state.keys['ShiftLeft'] || state.keys['ShiftRight']) ? 1.38 : 1.0;
+        const speed = (state.mode === 'LOBBY' ? 8.5 : 9.4) * sprint;
+
+        // Dirección en base al yaw de la cámara
+        const forwardX = -Math.sin(p.yaw);
+        const forwardZ = -Math.cos(p.yaw);
+        const rightX = Math.cos(p.yaw);
+        const rightZ = -Math.sin(p.yaw);
+
+        const vx = (forwardX * moveZ + rightX * moveX) * speed;
+        const vz = (forwardZ * moveZ + rightZ * moveX) * speed;
+
+        p.pos.x += vx * dt;
+        p.pos.z += vz * dt;
+
+        // Gravedad y salto
+        p.vel.y -= 24 * dt;
+        p.pos.y += p.vel.y * dt;
+
+        const floorY = getFloorHeightAt(p.pos.x, p.pos.z);
+        if (p.pos.y <= floorY) {
+          p.pos.y = floorY;
+          p.vel.y = 0;
+          p.onGround = true;
+        } else {
+          p.onGround = false;
+        }
+
+        resolveCollisions(p.pos, 0.55);
+
+        // Disparo automático si se mantiene presionado el gatillo
+        const w = WEAPONS[p.activeWeaponIdx];
+        if (p.mouseDown && w && (w.auto || w.melee) && state.mode === 'PLAYING') {
+          fireActiveWeapon();
+        }
+
+        // Animación del personaje 3D
+        const moving = len > 0.08;
+        if (moving) p.walkCycle += dt * (sprint > 1 ? 13 : 9.5);
+        const swing = moving ? Math.sin(p.walkCycle) * 0.58 : 0;
+
+        playerRig.position.copy(p.pos);
+        playerRig.rotation.y = p.yaw + Math.PI;
+
+        const ud = playerRig.userData;
+        ud.leftLeg.rotation.x = swing;
+        ud.rightLeg.rotation.x = -swing;
+        ud.leftArm.rotation.x = -swing * 0.65;
+        ud.rightArm.rotation.x = state.mode === 'PLAYING'
+          ? (-1.15 + p.recoil * 1.4 - (p.knifeSlashAnim > 0 ? Math.sin(p.knifeSlashAnim * 24) * 0.9 : 0))
+          : (swing * 0.65);
+
+        // Actualizar vista en 1ª o 3ª persona (F5)
+        updateCameraRig(dt, moving);
+      }
+
+      function updateCameraRig(dt, moving) {
+        const p = state.player;
+        if (state.cameraShake > 0) state.cameraShake = Math.max(0, state.cameraShake - dt * 1.8);
+        const shakeX = (Math.random() - 0.5) * state.cameraShake * 0.45;
+        const shakeY = (Math.random() - 0.5) * state.cameraShake * 0.45;
+
+        if (state.cameraMode === 'first') {
+          playerRig.visible = false;
+          fpGroup.visible = state.mode === 'PLAYING';
+
+          const bob = moving ? Math.sin(p.walkCycle * 2) * 0.045 : 0;
+          camera.position.set(p.pos.x + shakeX, p.pos.y + 1.66 + bob + shakeY, p.pos.z);
+          camera.rotation.order = 'YXZ';
+          camera.rotation.y = p.yaw;
+          camera.rotation.x = p.pitch;
+
+          // Animación de brazos y retroceso en 1ª persona
+          fpArms.position.set(
+            Math.cos(p.walkCycle) * (moving ? 0.015 : 0),
+            Math.abs(Math.sin(p.walkCycle)) * (moving ? -0.02 : 0) - p.recoil * 0.12,
+            p.recoil * 0.25
+          );
+          fpArms.rotation.x = p.knifeSlashAnim > 0 ? -Math.sin(p.knifeSlashAnim * 22) * 0.85 : p.recoil * 0.4;
+        } else {
+          // Tercera Persona (Ángulo F5 sobre el hombro)
+          playerRig.visible = true;
+          fpGroup.visible = false;
+
+          const camDist = 4.6;
+          const targetPos = new THREE.Vector3(p.pos.x, p.pos.y + 1.68, p.pos.z);
+
+          const offX = Math.sin(p.yaw) * Math.cos(p.pitch) * camDist + Math.cos(p.yaw) * 0.55;
+          const offY = -Math.sin(p.pitch) * camDist + 0.65;
+          const offZ = Math.cos(p.yaw) * Math.cos(p.pitch) * camDist - Math.sin(p.yaw) * 0.55;
+
+          const desired = new THREE.Vector3(
+            targetPos.x + offX + shakeX,
+            Math.max(p.pos.y + 0.65, targetPos.y + offY + shakeY),
+            targetPos.z + offZ
+          );
+
+          // Evitar que la cámara salga de la arena
+          const limit = state.mode === 'LOBBY' ? 29.5 : 51.0;
+          desired.x = Math.max(-limit, Math.min(limit, desired.x));
+          desired.z = Math.max(-limit, Math.min(limit, desired.z));
+
+          camera.position.lerp(desired, Math.min(1, dt * 16));
+          const lookAhead = new THREE.Vector3(
+            targetPos.x - Math.sin(p.yaw) * 14,
+            targetPos.y + Math.sin(p.pitch) * 10,
+            targetPos.z - Math.cos(p.yaw) * 14
+          );
+          camera.lookAt(lookAhead);
+        }
+      }
+
+      function updateLobbyPortals(dt, elapsed) {
+        let activePortal = null;
+        state.portals.forEach((pt) => {
+          pt.outerRing.rotation.z += dt * 0.9;
+          pt.innerRing.rotation.z -= dt * 1.4;
+          pt.beam.material.opacity = 0.11 + Math.sin(elapsed * 3.5 + pt.x) * 0.05;
+
+          const dist = Math.hypot(state.player.pos.x - pt.x, state.player.pos.z - pt.z);
+          if (dist < pt.radius) {
+            activePortal = pt;
+          }
+
+          projectLabelToScreen(new THREE.Vector3(pt.x, 3.6, pt.z), pt.labelEl);
+        });
+
+        if (activePortal) {
+          setInteractPrompt(`Entrar a: ${activePortal.title}`, () => activatePortal(activePortal.id));
+        } else {
+          setInteractPrompt(null);
+        }
+      }
+
+      function updateMonsters(dt) {
+        const pPos = state.player.pos;
+
+        state.monsters.forEach((m) => {
+          if (!m.alive) return;
+          m.animPhase += dt * (m.speed * 1.6);
+          if (m.attackCd > 0) m.attackCd -= dt;
+          if (m.specialCd > 0) m.specialCd -= dt;
+
+          // Destello de impacto
+          if (m.hitFlash > 0) {
+            m.hitFlash -= dt;
+            m.mesh.scale.setScalar(1.06);
+          } else {
+            m.mesh.scale.setScalar(1.0);
+          }
+
+          // Mod 4 (Estilo Chucky): Busca cuchillos tirados en el mapa si aún no tiene uno
+          let goalPos = pPos;
+          if (m.type === 'mod4' && !m.hasKnife) {
+            const availKnife = state.mapKnives.find(k => !k.taken);
+            if (availKnife) {
+              goalPos = availKnife.pos;
+              if (m.pos.distanceTo(availKnife.pos) < 1.8) {
+                availKnife.taken = true;
+                availKnife.mesh.visible = false;
+                m.hasKnife = true;
+                m.damage = 24;
+                m.speed = 7.2;
+                if (m.mesh.userData.animParts.heldKnife) {
+                  m.mesh.userData.animParts.heldKnife.visible = true;
+                }
+                showToast('🔪 ¡Mod 4 encontró un cuchillo en el mapa y ahora es más letal!', 2600);
+              }
+            }
+          }
+
+          const toGoal = new THREE.Vector3(goalPos.x - m.pos.x, 0, goalPos.z - m.pos.z);
+          const distGoal = toGoal.length();
+          const distPlayer = m.pos.distanceTo(pPos);
+
+          if (distGoal > 0.01) {
+            toGoal.normalize();
+            m.mesh.rotation.y = Math.atan2(toGoal.x, toGoal.z);
+
+            const stopDist = (m.type === 'mod1' || m.type === 'mod3') ? 10.5 : 2.1;
+            if (distGoal > stopDist || goalPos !== pPos) {
+              m.pos.x += toGoal.x * m.speed * dt;
+              m.pos.z += toGoal.z * m.speed * dt;
+            }
+          }
+
+          // Mantener sobre el suelo y respetar obstáculos
+          m.pos.y = getFloorHeightAt(m.pos.x, m.pos.z);
+          resolveCollisions(m.pos, m.boss ? 1.15 : 0.65);
+          m.mesh.position.copy(m.pos);
+
+          // Animaciones procedurales de extremidades
+          const ap = m.mesh.userData.animParts;
+          const sw = Math.sin(m.animPhase) * 0.55;
+          if (ap.legL) ap.legL.rotation.x = sw;
+          if (ap.legR) ap.legR.rotation.x = -sw;
+          if (ap.armL) ap.armL.rotation.x = -sw * 0.7;
+          if (ap.armR) ap.armR.rotation.x = sw * 0.7;
+          if (ap.floatHead) ap.floatHead.position.y = 2.65 + Math.sin(m.animPhase) * 0.18;
+
+          // Animación de súper lengua del Mod 2
+          if (m.type === 'mod2' && ap.tonguePivot) {
+            if (m.tongueExtend > 0) {
+              m.tongueExtend = Math.max(0, m.tongueExtend - dt * 3.2);
+              ap.tonguePivot.scale.z = 1 + Math.sin(m.tongueExtend * Math.PI) * 7.8;
+            } else {
+              ap.tonguePivot.scale.z = 1.0;
+            }
+          }
+
+          // --- ATAQUES ÚNICOS DE CADA MONSTRUO ---
+          if (m.attackCd <= 0) {
+            if (m.type === 'flako' && distPlayer < 9.5 && m.specialCd <= 0) {
+              // FLAKO: Golpe de onda expansiva masiva
+              m.specialCd = 5.5;
+              m.attackCd = 1.6;
+              spawnExplosion(new THREE.Vector3(m.pos.x, m.pos.y + 0.3, m.pos.z), 0xef4444, 8.5);
+              state.cameraShake = Math.max(state.cameraShake, 0.45);
+              if (distPlayer < 7.8 && pPos.y < m.pos.y + 1.4) {
+                damagePlayer(26);
+              }
+            } else if (m.type === 'mod1' && distPlayer < 28 && m.specialCd <= 0) {
+              // MOD 1: Lanza su cabeza gigante giratoria
+              m.specialCd = 4.2;
+              m.attackCd = 1.5;
+              const headProj = new THREE.Mesh(
+                new THREE.SphereGeometry(0.62, 12, 12),
+                new THREE.MeshStandardMaterial({ color: 0xe2e8f0, emissive: 0xfacc15, emissiveIntensity: 0.45 })
+              );
+              const startP = new THREE.Vector3(m.pos.x, m.pos.y + 2.7, m.pos.z);
+              headProj.position.copy(startP);
+              worldGroup.add(headProj);
+              const dir = new THREE.Vector3().subVectors(new THREE.Vector3(pPos.x, pPos.y + 1.2, pPos.z), startP).normalize();
+              state.projectiles.push({
+                fromPlayer: false,
+                damage: 18,
+                mesh: headProj,
+                pos: startP,
+                vel: dir.multiplyScalar(18),
+                spin: true,
+                life: 3.0
+              });
+            } else if (m.type === 'mod2' && distPlayer < 9.2) {
+              // MOD 2: Látigo de súper lengua a media distancia
+              m.attackCd = 1.75;
+              m.tongueExtend = 1.0;
+              if (distPlayer < 8.4) damagePlayer(m.damage);
+            } else if (m.type === 'mod3' && distPlayer < 26) {
+              // MOD 3: Lanza cuchillas giratorias (ráfaga extra si el jugador usa cuchillo)
+              const playerUsingKnife = state.player.activeWeaponIdx === 0;
+              const bladeCount = playerUsingKnife ? 3 : 1;
+              m.attackCd = playerUsingKnife ? 2.1 : 2.8;
+              if (playerUsingKnife && Math.random() < 0.35) {
+                showToast('⚔ ¡Mod 3 replicó tu cuchillo y lanzó ráfaga de cuchillas!', 2200);
+              }
+              for (let b = 0; b < bladeCount; b++) {
+                const blade = new THREE.Mesh(
+                  new THREE.BoxGeometry(0.55, 0.08, 0.55),
+                  new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+                );
+                const startP = new THREE.Vector3(m.pos.x, m.pos.y + 2.2, m.pos.z);
+                blade.position.copy(startP);
+                worldGroup.add(blade);
+                const dir = new THREE.Vector3().subVectors(new THREE.Vector3(pPos.x, pPos.y + 1.2, pPos.z), startP).normalize();
+                dir.x += (b - (bladeCount - 1) / 2) * 0.14;
+                dir.normalize();
+                state.projectiles.push({
+                  fromPlayer: false,
+                  damage: 14,
+                  mesh: blade,
+                  pos: startP,
+                  vel: dir.multiplyScalar(22),
+                  spin: true,
+                  life: 2.6
+                });
+              }
+            } else if (distPlayer < m.range + 0.6) {
+              // Ataque cuerpo a cuerpo estándar (Flako, Mod 4, Mod 5, Mod 6)
+              m.attackCd = m.type === 'mod5' ? 0.95 : 1.25;
+              damagePlayer(m.damage);
+            }
+          }
+
+          // Proyectar barra de vida sobre el monstruo
+          projectLabelToScreen(new THREE.Vector3(m.pos.x, m.pos.y + m.height + 0.45, m.pos.z), m.labelEl);
+        });
+      }
+
+      function updatePickupsAndTower(dt, elapsed) {
+        const pPos = state.player.pos;
+
+        // Armas y botiquines
+        state.pickups.forEach((pk) => {
+          if (pk.collected) return;
+          pk.spinMesh.rotation.y += dt * 2.1;
+          pk.mesh.position.y = 0.85 + Math.sin(elapsed * 3 + pk.pos.x) * 0.16;
+
+          if (Math.hypot(pPos.x - pk.pos.x, pPos.z - pk.pos.z) < 2.0) {
+            if (pk.type === 'health') {
+              if (state.player.hp >= state.player.overhealMax) return;
+              pk.collected = true;
+              pk.mesh.visible = false;
+              state.player.hp = Math.min(state.player.overhealMax, state.player.hp + 45);
+              sound.playPickup();
+              updateHealthHUD();
+              showToast('💚 +45 Salud / Vida Extra recuperada', 2000);
+            } else if (pk.type === 'weapon') {
+              pk.collected = true;
+              pk.mesh.visible = false;
+              const w = WEAPONS[pk.weaponIdx];
+              const newlyUnlocked = !w.unlocked;
+              w.unlocked = true;
+              w.ammo = Math.min(w.maxAmmo, w.ammo + Math.ceil(w.maxAmmo * 0.55));
+              if (newlyUnlocked) {
+                state.player.activeWeaponIdx = pk.weaponIdx;
+                refreshEquippedWeaponVisuals();
+              }
+              sound.playPickup();
+              renderWeaponsHUD();
+              showToast(`${w.icon} ¡Recogiste ${w.name}!`, 2200);
+            }
+          }
+        });
+
+        // Cuchillos del mapa (el jugador también puede recogerlos para potenciar su cuchillo y negárselos a Mod 4)
+        state.mapKnives.forEach((k) => {
+          if (k.taken) return;
+          k.spinMesh.rotation.y += dt * 2.8;
+          if (Math.hypot(pPos.x - k.pos.x, pPos.z - k.pos.z) < 1.8) {
+            k.taken = true;
+            k.mesh.visible = false;
+            WEAPONS[0].damage += 12;
+            sound.playPickup();
+            showToast('🗡 ¡Recogiste un cuchillo del mapa! (+12 daño cuerpo a cuerpo)', 2300);
+          }
+        });
+
+        // Torre de Cañones Animados
+        if (state.tower) {
+          const tw = state.tower;
+          if (tw.cooldown > 0) tw.cooldown = Math.max(0, tw.cooldown - dt);
+
+          // Apuntar suavemente los 2 cañones hacia Flako o el monstruo vivo más cercano
+          const aliveTarget = state.monsters.find(m => m.alive && m.boss) || state.monsters.find(m => m.alive);
+          tw.cannons.forEach((c) => {
+            c.coils.forEach((coil, idx) => {
+              coil.rotation.z += dt * (tw.charging ? 14 : 2.2) * (idx % 2 === 0 ? 1 : -1);
+            });
+            if (c.recoil > 0) {
+              c.recoil = Math.max(0, c.recoil - dt * 2.8);
+              c.barrelGroup.position.z = 1.1 - c.recoil * 0.75;
+            }
+            c.muzzleOrb.scale.setScalar(tw.charging ? (1.2 + Math.sin(elapsed * 28) * 0.45) : 0.85);
+
+            if (aliveTarget) {
+              const worldMount = new THREE.Vector3();
+              c.mount.getWorldPosition(worldMount);
+              const ang = Math.atan2(aliveTarget.pos.x - worldMount.x, aliveTarget.pos.z - worldMount.z);
+              c.turretYaw.rotation.y = ang;
+            }
+          });
+
+          if (tw.charging) {
+            tw.chargeTimer -= dt;
+            if (tw.chargeTimer <= 0) {
+              executeTowerCannonSalvo();
+            }
+          }
+
+          // HUD de distancia y dirección hacia la torre
+          const dx = tw.x - pPos.x;
+          const dz = tw.z - pPos.z;
+          const distTower = Math.round(Math.hypot(dx, dz));
+          document.getElementById('hud-tower-dist').textContent = `${distTower} m`;
+
+          const angleToTower = Math.atan2(-dx, -dz);
+          let rel = angleToTower - state.player.yaw;
+          while (rel > Math.PI) rel -= Math.PI * 2;
+          while (rel < -Math.PI) rel += Math.PI * 2;
+          const dirEl = document.getElementById('hud-tower-dir');
+          if (Math.abs(rel) < 0.6) dirEl.textContent = '↑';
+          else if (rel >= 0.6 && rel < 2.3) dirEl.textContent = '←';
+          else if (rel <= -0.6 && rel > -2.3) dirEl.textContent = '→';
+          else dirEl.textContent = '↓';
+
+          projectLabelToScreen(new THREE.Vector3(tw.x, tw.deckY + 4.8, tw.z), tw.labelEl);
+
+          // Comprobar si el jugador está arriba en la consola de la torre
+          const distConsole = pPos.distanceTo(tw.consolePos);
+          if (distConsole < 4.5 && pPos.y >= tw.deckY - 0.8) {
+            if (tw.charging) {
+              setInteractPrompt('⚡ CARGANDO CAÑONES...', null);
+            } else if (tw.cooldown > 0) {
+              setInteractPrompt(`Recargando Cañones (${tw.cooldown.toFixed(1)}s)`, null);
+            } else {
+              setInteractPrompt('🔥 DISPARAR CAÑÓN DE GRAN PODER', triggerTowerCannons);
+            }
+          } else {
+            setInteractPrompt(null);
+          }
+        }
+      }
+
+      function updateProjectilesAndEffects(dt) {
+        // Proyectiles (plasma del jugador, cabeza de Mod 1, cuchillas de Mod 3)
+        for (let i = state.projectiles.length - 1; i >= 0; i--) {
+          const pr = state.projectiles[i];
+          pr.life -= dt;
+          pr.pos.addScaledVector(pr.vel, dt);
+          pr.mesh.position.copy(pr.pos);
+          if (pr.spin) pr.mesh.rotation.y += dt * 14;
+
+          let remove = pr.life <= 0 || pr.pos.y < 0.1;
+
+          if (pr.fromPlayer) {
+            for (const m of state.monsters) {
+              if (!m.alive) continue;
+              if (pr.pos.distanceTo(new THREE.Vector3(m.pos.x, m.pos.y + m.height * 0.5, m.pos.z)) < (m.boss ? 2.1 : 1.35)) {
+                remove = true;
+                break;
+              }
+            }
+            if (remove && pr.explosive) {
+              spawnExplosion(pr.pos, 0xc084fc, pr.blastRadius);
+              sound.playCannonBlast();
+              state.monsters.forEach((m) => {
+                if (!m.alive) return;
+                if (m.pos.distanceTo(pr.pos) <= pr.blastRadius + (m.boss ? 1.5 : 0.6)) {
+                  damageMonster(m, pr.damage);
+                }
+              });
+            }
+          } else {
+            const pCenter = new THREE.Vector3(state.player.pos.x, state.player.pos.y + 1.2, state.player.pos.z);
+            if (pr.pos.distanceTo(pCenter) < 1.15) {
+              damagePlayer(pr.damage);
+              remove = true;
+            }
+          }
+
+          if (remove) {
+            worldGroup.remove(pr.mesh);
+            state.projectiles.splice(i, 1);
+          }
+        }
+
+        // Efectos visuales (explosiones y rayos)
+        for (let i = state.effects.length - 1; i >= 0; i--) {
+          const ef = state.effects[i];
+          ef.age += dt;
+          const t = Math.min(1, ef.age / ef.duration);
+
+          if (ef.type === 'explosion') {
+            const s = 1 + t * ef.maxScale;
+            ef.ring.scale.set(s, s, 1);
+            ef.ring.material.opacity = 1 - t;
+            ef.sphere.scale.setScalar(0.8 + t * (ef.maxScale * 0.5));
+            ef.sphere.material.opacity = (1 - t) * 0.7;
+            if (t >= 1) {
+              worldGroup.remove(ef.ring);
+              worldGroup.remove(ef.sphere);
+              state.effects.splice(i, 1);
+            }
+          } else if (ef.type === 'beam') {
+            ef.mesh.material.opacity = 1 - t;
+            if (t >= 1) {
+              worldGroup.remove(ef.mesh);
+              state.effects.splice(i, 1);
+            }
+          }
+        }
+      }
+
+      /* ==========================================================
+         L. UTILIDADES DE INTERFAZ (HUD, ETIQUETAS 3D, MODALES)
+      =========================================================== */
+      const tmpProjVec = new THREE.Vector3();
+      function projectLabelToScreen(worldPos, el) {
+        tmpProjVec.copy(worldPos);
+        tmpProjVec.project(camera);
+        if (tmpProjVec.z > 1 || tmpProjVec.z < -1) {
+          el.style.display = 'none';
+          return;
+        }
+        const x = (tmpProjVec.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-tmpProjVec.y * 0.5 + 0.5) * window.innerHeight;
+        el.style.display = 'block';
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+      }
+
+      let toastTimer = null;
+      function showToast(msg, ms = 2400) {
+        const el = document.getElementById('hud-toast');
+        el.textContent = msg;
+        el.style.opacity = '1';
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { el.style.opacity = '0'; }, ms);
+      }
+
+      function setInteractPrompt(text, actionFn) {
+        const wrap = document.getElementById('interact-prompt');
+        const txt = document.getElementById('interact-prompt-text');
+        state.currentInteract = actionFn || null;
+        if (text) {
+          txt.textContent = text;
+          wrap.classList.remove('hidden');
+        } else {
+          wrap.classList.add('hidden');
+        }
+      }
+
+      function updateHealthHUD() {
+        const hp = Math.ceil(state.player.hp);
+        const pct = Math.min(100, (hp / state.player.maxHp) * 100);
+        document.getElementById('hud-hp-text').textContent = `${hp} / ${state.player.maxHp}`;
+        const bar = document.getElementById('hud-hp-bar');
+        bar.style.width = pct + '%';
+
+        const shieldTag = document.getElementById('hud-shield-tag');
+        if (hp > 100) {
+          bar.className = 'h-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-150';
+          shieldTag.classList.remove('hidden');
+        } else if (hp < 35) {
+          bar.className = 'h-full bg-gradient-to-r from-red-600 to-orange-500 transition-all duration-150';
+          shieldTag.classList.add('hidden');
+        } else {
+          bar.className = 'h-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-150';
+          shieldTag.classList.add('hidden');
+        }
+      }
+
+      function renderWeaponsHUD() {
+        const bar = document.getElementById('hud-weapons-bar');
+        bar.innerHTML = '';
+        WEAPONS.forEach((w, idx) => {
+          const active = idx === state.player.activeWeaponIdx;
+          const btn = document.createElement('button');
+          btn.className = `rounded-xl p-1.5 sm:p-2 text-left border transition flex flex-col justify-between ${
+            active
+              ? 'bg-purple-600/45 border-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.5)]'
+              : w.unlocked
+                ? 'bg-slate-950/75 border-white/15 hover:bg-slate-800/80'
+                : 'bg-black/45 border-white/5 opacity-45'
+          }`;
+          btn.innerHTML = `
+            <div class="flex items-center justify-between text-[10px] font-bold">
+              <span class="px-1.5 rounded bg-black/50 text-slate-300">${w.key}</span>
+              <span>${w.icon}</span>
+            </div>
+            <div class="text-[10px] sm:text-xs font-bold text-white truncate mt-1">${w.shortName}</div>
+            <div class="text-[10px] text-cyan-300 font-semibold">${w.unlocked ? (w.melee ? '∞' : w.ammo) : 'Mapa'}</div>
+          `;
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectWeapon(idx);
+          });
+          bar.appendChild(btn);
+        });
+      }
+
+      function selectWeapon(idx) {
+        const w = WEAPONS[idx];
+        if (!w || !w.unlocked) {
+          showToast(`Busca ${w ? w.name : 'esta arma'} brillando en el mapa`, 1600);
+          return;
+        }
+        state.player.activeWeaponIdx = idx;
+        sound.playClick();
+        refreshEquippedWeaponVisuals();
+        renderWeaponsHUD();
+      }
+
+      function updateControlVisibility() {
+        const showMobile = state.controlMode === 'mobile' || (state.controlMode === 'auto' && state.isTouchDevice);
+        const mobileEl = document.getElementById('mobile-controls');
+        const showHudActive = state.mode === 'LOBBY' || state.mode === 'PLAYING';
+        mobileEl.classList.toggle('hidden', !(showMobile && showHudActive && !state.modalOpen));
+
+        // Actualizar botones seleccionados en Configuración
+        document.querySelectorAll('.ctrl-mode-btn').forEach((b) => {
+          const on = b.dataset.ctrlMode === state.controlMode;
+          b.className = `ctrl-mode-btn py-2 rounded-xl text-xs font-bold border transition ${on ? 'border-purple-400 bg-purple-600/40 text-white' : 'border-white/15 bg-white/5 text-slate-300'}`;
+        });
+      }
+
+      function updateCameraLabels() {
+        const isThird = state.cameraMode === 'third';
+        document.getElementById('menu-camera-badge').textContent = isThird ? 'Tercera Persona (F5)' : 'Primera Persona (FPS)';
+        document.getElementById('hud-cam-label').textContent = isThird ? '3ª Persona' : '1ª Persona';
+
+        document.querySelectorAll('.cam-mode-btn').forEach((b) => {
+          const on = b.dataset.camMode === state.cameraMode;
+          b.className = `cam-mode-btn py-2.5 rounded-xl text-xs font-bold border transition ${on ? 'border-cyan-400 bg-cyan-500/30 text-white' : 'border-white/15 bg-white/5 text-slate-300'}`;
+        });
+      }
+
+      function toggleCameraPerspective() {
+        state.cameraMode = state.cameraMode === 'third' ? 'first' : 'third';
+        sound.playClick();
+        updateCameraLabels();
+        if (state.mode === 'LOBBY' || state.mode === 'PLAYING') {
+          showToast(state.cameraMode === 'third' ? '🎥 Cámara: Tercera Persona (F5)' : '🎥 Cámara: Primera Persona (FPS)', 1500);
+        }
+      }
+
+      function updateHUDMode() {
+        const hud = document.getElementById('hud');
+        const mainMenu = document.getElementById('main-menu');
+        const combatStats = document.getElementById('hud-combat-stats');
+        const hpWrap = document.getElementById('hud-hp-container');
+        const weaponsBar = document.getElementById('hud-weapons-bar');
+        const btnLobbyInSettings = document.getElementById('btn-settings-lobby');
+
+        if (state.mode === 'MENU') {
+          hud.classList.add('hidden');
+          mainMenu.classList.remove('hidden');
+          mainMenu.classList.add('flex');
+        } else if (state.mode === 'LOBBY') {
+          mainMenu.classList.add('hidden');
+          mainMenu.classList.remove('flex');
+          hud.classList.remove('hidden');
+          combatStats.classList.add('hidden');
+          combatStats.classList.remove('flex');
+          hpWrap.classList.add('hidden');
+          weaponsBar.classList.add('hidden');
+          btnLobbyInSettings.classList.add('hidden');
+          document.getElementById('hud-zone-title').textContent = 'LOBBY CENTRAL';
+          document.getElementById('hud-zone-sub').textContent = 'Baja la escalera y entra a una de las 4 auras';
+          document.getElementById('hud-zone-dot').className = 'w-2.5 h-2.5 rounded-full bg-purple-400 animate-pulse';
+        } else if (state.mode === 'PLAYING') {
+          mainMenu.classList.add('hidden');
+          mainMenu.classList.remove('flex');
+          hud.classList.remove('hidden');
+          combatStats.classList.remove('hidden');
+          combatStats.classList.add('flex');
+          hpWrap.classList.remove('hidden');
+          weaponsBar.classList.remove('hidden');
+          btnLobbyInSettings.classList.remove('hidden');
+
+          const names = { terror: 'ESCENARIO: TERROR', school: 'COLEGIO DE TERROR', supermarket: 'SUPERMERCADO BOMBARDEADO' };
+          document.getElementById('hud-zone-title').textContent = names[state.scenario] || 'KILL FLAKO';
+          document.getElementById('hud-zone-sub').textContent = 'Huye, ármate y usa los cañones de la Torre';
+          document.getElementById('hud-zone-dot').className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
+
+          updateHealthHUD();
+          renderWeaponsHUD();
+        }
+
+        updateControlVisibility();
+        updatePointerLockBanner();
+      }
+
+      function openModal(id) {
+        state.modalOpen = true;
+        if (document.pointerLockElement) document.exitPointerLock();
+        const el = document.getElementById(id);
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+        updateControlVisibility();
+        updatePointerLockBanner();
+      }
+
+      function closeModal(id) {
+        const el = document.getElementById(id);
+        el.classList.add('hidden');
+        el.classList.remove('flex');
+        const anyOpen = ['modal-reports', 'modal-scenarios', 'modal-coming-soon', 'modal-settings', 'modal-endgame']
+          .some(m => !document.getElementById(m).classList.contains('hidden'));
+        state.modalOpen = anyOpen;
+        updateControlVisibility();
+        updatePointerLockBanner();
+      }
+
+      function activatePortal(id) {
+        sound.playClick();
+        if (id === 'kill_flako') {
+          openModal('modal-scenarios');
+        } else if (id === 'david') {
+          openModal('modal-coming-soon');
+        } else if (id === 'exit') {
+          goToMainMenu();
+        } else if (id === 'config') {
+          openModal('modal-settings');
+        }
+      }
+
+      function goToMainMenu() {
+        ['modal-scenarios', 'modal-coming-soon', 'modal-settings', 'modal-endgame'].forEach(closeModal);
+        if (document.pointerLockElement) document.exitPointerLock();
+        state.mode = 'MENU';
+        buildMenuBackdrop();
+        updateHUDMode();
+      }
+
+      function triggerEndGame(victory) {
+        state.mode = victory ? 'VICTORY' : 'DEFEAT';
+        if (document.pointerLockElement) document.exitPointerLock();
+
+        document.getElementById('endgame-icon').textContent = victory ? '🏆' : '☠';
+        document.getElementById('endgame-title').textContent = victory ? '¡VICTORIA TOTAL!' : 'HAS CAÍDO';
+        document.getElementById('endgame-desc').textContent = victory
+          ? '¡Acabaste con Flako y sus 6 aliados! Excelente trabajo.'
+          : 'Flako y sus amigos te alcanzaron. ¡Inténtalo de nuevo y corre a la Torre!';
+
+        const mins = String(Math.floor(state.matchTime / 60)).padStart(2, '0');
+        const secs = String(Math.floor(state.matchTime % 60)).padStart(2, '0');
+        document.getElementById('stat-time').textContent = `${mins}:${secs}`;
+        document.getElementById('stat-kills').textContent = `${state.kills}/7`;
+        document.getElementById('stat-cannons').textContent = state.cannonShots;
+
+        openModal('modal-endgame');
+      }
+
+      /* ==========================================================
+         M. CONTROLES PC (TECLADO + POINTER LOCK) Y MÓVIL (JOYSTICK + TOUCH)
+      =========================================================== */
+      function updatePointerLockBanner() {
+        const banner = document.getElementById('pointer-lock-banner');
+        const isMobile = state.controlMode === 'mobile' || (state.controlMode === 'auto' && state.isTouchDevice);
+        const shouldShow = (state.mode === 'LOBBY' || state.mode === 'PLAYING') && !state.modalOpen && !isMobile && !document.pointerLockElement;
+        banner.classList.toggle('hidden', !shouldShow);
+      }
+
+      function requestLockSafe() {
+        const isMobile = state.controlMode === 'mobile' || (state.controlMode === 'auto' && state.isTouchDevice);
+        if (isMobile || state.modalOpen) return;
+        try {
+          if (renderer.domElement.requestPointerLock) {
+            renderer.domElement.requestPointerLock();
+          }
+        } catch (_) {}
+      }
+
+      document.addEventListener('pointerlockchange', updatePointerLockBanner);
+
+      // Ratón en PC (Pointer Lock o arrastrando clic derecho/izquierdo)
+      let draggingLook = false;
+      window.addEventListener('mousemove', (e) => {
+        if (state.modalOpen || (state.mode !== 'LOBBY' && state.mode !== 'PLAYING')) return;
+        if (document.pointerLockElement === renderer.domElement || draggingLook) {
+          const sens = 0.0022 * state.sensitivity;
+          state.player.yaw -= e.movementX * sens;
+          state.player.pitch = Math.max(-1.2, Math.min(1.1, state.player.pitch - e.movementY * sens));
+        }
+      });
+
+      renderer.domElement.addEventListener('mousedown', (e) => {
+        if (state.modalOpen || (state.mode !== 'LOBBY' && state.mode !== 'PLAYING')) return;
+        sound.ensure();
+        if (document.pointerLockElement !== renderer.domElement) {
+          requestLockSafe();
+          draggingLook = true;
+        }
+        if (e.button === 0 && state.mode === 'PLAYING') {
+          state.player.mouseDown = true;
+          fireActiveWeapon();
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        draggingLook = false;
+        state.player.mouseDown = false;
+      });
+
+      // Teclado PC
+      window.addEventListener('keydown', (e) => {
+        // Evitar recarga de navegador al presionar F5 para usar F5 como cambio de cámara
+        if (e.code === 'F5') {
+          e.preventDefault();
+          toggleCameraPerspective();
+          return;
+        }
+        if (state.modalOpen) {
+          if (e.code === 'Escape') {
+            ['modal-reports', 'modal-scenarios', 'modal-coming-soon', 'modal-settings'].forEach(closeModal);
+          }
+          return;
+        }
+
+        state.keys[e.code] = true;
+
+        if (e.code === 'KeyV') toggleCameraPerspective();
+        if (e.code === 'KeyE' && state.currentInteract) state.currentInteract();
+        if (e.code === 'Space' && state.player.onGround && (state.mode === 'LOBBY' || state.mode === 'PLAYING')) {
+          state.player.vel.y = 9.8;
+          state.player.onGround = false;
+        }
+        if (e.code === 'KeyP') {
+          if (state.mode === 'LOBBY' || state.mode === 'PLAYING') openModal('modal-settings');
+        }
+        if (state.mode === 'PLAYING') {
+          if (e.code === 'Digit1') selectWeapon(0);
+          if (e.code === 'Digit2') selectWeapon(1);
+          if (e.code === 'Digit3') selectWeapon(2);
+          if (e.code === 'Digit4') selectWeapon(3);
+          if (e.code === 'Digit5') selectWeapon(4);
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        state.keys[e.code] = false;
+      });
+
+      // Joystick Táctil Izquierdo (Móvil)
+      const joyBase = document.getElementById('joystick-base');
+      const joyKnob = document.getElementById('joystick-knob');
+      let joyTouchId = null;
+
+      joyBase.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        sound.ensure();
+        const t = e.changedTouches[0];
+        joyTouchId = t.identifier;
+        state.joy.active = true;
+        updateJoystick(t.clientX, t.clientY);
+      }, { passive: false });
+
+      window.addEventListener('touchmove', (e) => {
+        if (joyTouchId === null) return;
+        for (const t of e.changedTouches) {
+          if (t.identifier === joyTouchId) {
+            updateJoystick(t.clientX, t.clientY);
+          }
+        }
+      }, { passive: false });
+
+      window.addEventListener('touchend', (e) => {
+        for (const t of e.changedTouches) {
+          if (t.identifier === joyTouchId) {
+            joyTouchId = null;
+            state.joy.active = false;
+            state.joy.x = 0;
+            state.joy.y = 0;
+            joyKnob.style.transform = 'translate(0px, 0px)';
+          }
+        }
+      });
+
+      function updateJoystick(cx, cy) {
+        const rect = joyBase.getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        const midY = rect.top + rect.height / 2;
+        const maxR = rect.width * 0.38;
+        let dx = cx - midX;
+        let dy = cy - midY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > maxR) {
+          dx = (dx / dist) * maxR;
+          dy = (dy / dist) * maxR;
+        }
+        joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+        state.joy.x = dx / maxR;
+        state.joy.y = dy / maxR;
+      }
+
+      // Zona táctil derecha para girar cámara
+      const lookZone = document.getElementById('touch-look-zone');
+      let lookTouchId = null;
+      let lastLookX = 0;
+      let lastLookY = 0;
+
+      lookZone.addEventListener('touchstart', (e) => {
+        const t = e.changedTouches[0];
+        lookTouchId = t.identifier;
+        lastLookX = t.clientX;
+        lastLookY = t.clientY;
+      }, { passive: true });
+
+      lookZone.addEventListener('touchmove', (e) => {
+        for (const t of e.changedTouches) {
+          if (t.identifier === lookTouchId) {
+            const dx = t.clientX - lastLookX;
+            const dy = t.clientY - lastLookY;
+            lastLookX = t.clientX;
+            lastLookY = t.clientY;
+            const sens = 0.0052 * state.sensitivity;
+            state.player.yaw -= dx * sens;
+            state.player.pitch = Math.max(-1.15, Math.min(1.05, state.player.pitch - dy * sens));
+          }
+        }
+      }, { passive: true });
+
+      lookZone.addEventListener('touchend', (e) => {
+        for (const t of e.changedTouches) {
+          if (t.identifier === lookTouchId) lookTouchId = null;
+        }
+      });
+
+      // Botones táctiles de Atacar y Saltar
+      const btnTouchFire = document.getElementById('btn-touch-fire');
+      btnTouchFire.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        sound.ensure();
+        state.player.mouseDown = true;
+        fireActiveWeapon();
+      }, { passive: false });
+      btnTouchFire.addEventListener('touchend', () => { state.player.mouseDown = false; });
+
+      document.getElementById('btn-touch-jump').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (state.player.onGround) {
+          state.player.vel.y = 9.8;
+          state.player.onGround = false;
+        }
+      }, { passive: false });
+
+      /* ==========================================================
+         N. CONEXIÓN DE BOTONES UI Y SISTEMA DE REPORTES
+      =========================================================== */
+      document.getElementById('btn-enter-lobby').addEventListener('click', () => {
+        sound.playClick();
+        buildLobby();
+      });
+
+      document.getElementById('btn-menu-camera').addEventListener('click', toggleCameraPerspective);
+      document.getElementById('btn-hud-camera').addEventListener('click', toggleCameraPerspective);
+
+      document.getElementById('btn-menu-reports').addEventListener('click', () => {
+        sound.playClick();
+        openModal('modal-reports');
+      });
+
+      document.getElementById('btn-hud-settings').addEventListener('click', () => {
+        sound.playClick();
+        openModal('modal-settings');
+      });
+
+      document.getElementById('btn-resume-lock').addEventListener('click', () => {
+        sound.ensure();
+        requestLockSafe();
+      });
+
+      document.getElementById('btn-interact-action').addEventListener('click', () => {
+        if (state.currentInteract) state.currentInteract();
+      });
+
+      document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          sound.playClick();
+          closeModal(btn.dataset.closeModal);
+        });
+      });
+
+      // Selector de los 3 escenarios
+      document.querySelectorAll('.scenario-card').forEach((card) => {
+        card.addEventListener('click', () => {
+          sound.playClick();
+          closeModal('modal-scenarios');
+          startKillFlako(card.dataset.scenario);
+          requestLockSafe();
+        });
+      });
+
+      // Configuración: Volumen, Sensibilidad, Controles, Cámara
+      const volSlider = document.getElementById('setting-volume');
+      volSlider.addEventListener('input', () => {
+        const val = Number(volSlider.value);
+        document.getElementById('setting-volume-val').textContent = val + '%';
+        sound.setVolume(val / 100);
+      });
+      volSlider.addEventListener('change', () => sound.playClick());
+
+      const sensSlider = document.getElementById('setting-sens');
+      sensSlider.addEventListener('input', () => {
+        state.sensitivity = Number(sensSlider.value) / 10;
+        document.getElementById('setting-sens-val').textContent = state.sensitivity.toFixed(1) + 'x';
+      });
+
+      document.querySelectorAll('.ctrl-mode-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.controlMode = btn.dataset.ctrlMode;
+          sound.playClick();
+          updateControlVisibility();
+          updatePointerLockBanner();
+        });
+      });
+
+      document.querySelectorAll('.cam-mode-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.cameraMode = btn.dataset.camMode;
+          sound.playClick();
+          updateCameraLabels();
+        });
+      });
+
+      document.getElementById('btn-settings-lobby').addEventListener('click', () => {
+        sound.playClick();
+        closeModal('modal-settings');
+        buildLobby();
+      });
+
+      document.getElementById('btn-settings-exit').addEventListener('click', () => {
+        sound.playClick();
+        goToMainMenu();
+      });
+
+      document.getElementById('btn-endgame-retry').addEventListener('click', () => {
+        sound.playClick();
+        closeModal('modal-endgame');
+        startKillFlako(state.scenario);
+      });
+
+      document.getElementById('btn-endgame-lobby').addEventListener('click', () => {
+        sound.playClick();
+        closeModal('modal-endgame');
+        buildLobby();
+      });
+
+      // Pestañas y envío de Propuestas / Reportes
+      const tabSend = document.getElementById('tab-send-report');
+      const tabCreator = document.getElementById('tab-creator-panel');
+      const panelSend = document.getElementById('panel-send-report');
+      const panelCreator = document.getElementById('panel-creator-view');
+
+      tabSend.addEventListener('click', () => {
+        tabSend.className = 'flex-1 py-2.5 rounded-xl font-semibold text-sm bg-purple-600 text-white transition';
+        tabCreator.className = 'flex-1 py-2.5 rounded-xl font-semibold text-sm bg-white/5 text-slate-300 hover:bg-white/10 transition flex items-center justify-center gap-2';
+        panelSend.classList.remove('hidden');
+        panelCreator.classList.add('hidden');
+      });
+
+      tabCreator.addEventListener('click', () => {
+        tabCreator.className = 'flex-1 py-2.5 rounded-xl font-semibold text-sm bg-purple-600 text-white transition flex items-center justify-center gap-2';
+        tabSend.className = 'flex-1 py-2.5 rounded-xl font-semibold text-sm bg-white/5 text-slate-300 hover:bg-white/10 transition';
+        panelCreator.classList.remove('hidden');
+        panelSend.classList.add('hidden');
+      });
+
+      document.getElementById('btn-submit-report').addEventListener('click', async () => {
+        const category = document.getElementById('report-category').value;
+        const author = document.getElementById('report-author').value.trim();
+        const message = document.getElementById('report-message').value.trim();
+        const fb = document.getElementById('report-feedback');
+
+        if (message.length < 5) {
+          fb.textContent = 'Por favor escribe un mensaje de al menos 5 caracteres.';
+          fb.className = 'rounded-xl px-4 py-2.5 text-xs font-semibold bg-red-500/20 border border-red-400/40 text-red-200';
+          fb.classList.remove('hidden');
+          return;
+        }
+
+        if (window.ReportService) {
+          await window.ReportService.addReport({ category, author, message });
+        }
+        sound.playPickup();
+        document.getElementById('report-message').value = '';
+        fb.textContent = '✓ ¡Mensaje enviado correctamente! Ya puedes verlo en el Panel de Creador.';
+        fb.className = 'rounded-xl px-4 py-2.5 text-xs font-semibold bg-emerald-500/20 border border-emerald-400/40 text-emerald-200';
+        fb.classList.remove('hidden');
+      });
+
+      function renderReportsList(reports) {
+        document.getElementById('reports-count-badge').textContent = reports.length;
+        const listEl = document.getElementById('reports-list');
+        if (!reports.length) {
+          listEl.innerHTML = '<div class="text-center text-xs text-slate-400 py-8">Aún no hay reportes registrados.</div>';
+          return;
+        }
+        listEl.innerHTML = '';
+        reports.forEach((r) => {
+          const card = document.createElement('div');
+          card.className = 'rounded-2xl bg-slate-900/80 border border-white/10 p-4 space-y-2';
+          const dateStr = r.createdAt ? new Date(r.createdAt).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '';
+          const isRev = r.status === 'Revisado';
+
+          card.innerHTML = `
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-purple-500/25 text-purple-200 border border-purple-400/30">${escapeHTML(r.category || 'Mensaje')}</span>
+                <span class="text-xs font-bold text-white">${escapeHTML(r.author || 'Anónimo')}</span>
+              </div>
+              <span class="text-[10px] text-slate-400">${dateStr}</span>
+            </div>
+            <p class="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">${escapeHTML(r.message || '')}</p>
+            <div class="flex items-center justify-between pt-2 border-t border-white/5">
+              <span class="text-[11px] font-bold ${isRev ? 'text-emerald-400' : 'text-amber-400'}">● ${escapeHTML(r.status || 'Pendiente')}</span>
+              <div class="flex gap-2">
+                <button class="btn-toggle-status px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/10 hover:bg-white/20 text-white">${isRev ? 'Marcar Pendiente' : 'Marcar Revisado'}</button>
+                <button class="btn-del-report px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-red-500/25 hover:bg-red-500/45 text-red-200">Eliminar</button>
+              </div>
+            </div>
+          `;
+          card.querySelector('.btn-toggle-status').addEventListener('click', () => window.ReportService && window.ReportService.toggleStatus(r.id, r.status));
+          card.querySelector('.btn-del-report').addEventListener('click', () => window.ReportService && window.ReportService.removeReport(r.id));
+          listEl.appendChild(card);
+        });
+      }
+
+      function escapeHTML(str) {
+        return String(str).replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
+      }
+
+      /* ==========================================================
+         O. ANIMACIÓN DE INTRO (4 SEGUNDOS) + PARTÍCULAS PIXELADAS
+      =========================================================== */
+      let introEnded = false;
+      function finishIntro() {
+        if (introEnded) return;
+        introEnded = true;
+        const overlay = document.getElementById('intro-overlay');
+        overlay.style.opacity = '0';
+        setTimeout(() => {
+          overlay.style.display = 'none';
+          state.mode = 'MENU';
+          updateHUDMode();
+        }, 650);
+      }
+
+      function runIntroParticles() {
+        const cvs = document.getElementById('intro-particles-canvas');
+        const ctx = cvs.getContext('2d');
+        cvs.width = window.innerWidth;
+        cvs.height = window.innerHeight;
+
+        const pts = Array.from({ length: 55 }, () => ({
+          x: Math.random() * cvs.width,
+          y: Math.random() * cvs.height,
+          vx: (Math.random() - 0.5) * 1.4,
+          vy: -0.6 - Math.random() * 1.8,
+          size: 3 + Math.floor(Math.random() * 5),
+          color: Math.random() > 0.5 ? '#ef4444' : '#a855f7'
+        }));
+
+        function step() {
+          if (introEnded) return;
+          ctx.clearRect(0, 0, cvs.width, cvs.height);
+          pts.forEach((p) => {
+            p.x += p.vx;
+            p.y += p.vy;
+            if (p.y < -10) { p.y = cvs.height + 10; p.x = Math.random() * cvs.width; }
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(p.x, p.y, p.size, p.size);
+          });
+          requestAnimationFrame(step);
+        }
+        step();
+      }
+
+      document.getElementById('btn-skip-intro').addEventListener('click', () => {
+        sound.playClick();
+        finishIntro();
+      });
+
+      /* ==========================================================
+         P. BUCLE PRINCIPAL DE ANIMACIÓN Y RESIZE
+      =========================================================== */
+      const clock = new THREE.Clock();
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const dt = Math.min(0.05, clock.getDelta());
+        const elapsed = clock.elapsedTime;
+
+        // Fondo giratorio cinematográfico en Intro y Menú Principal
+        if (state.mode === 'INTRO' || state.mode === 'MENU') {
+          camera.position.set(Math.sin(elapsed * 0.25) * 12, 4.4 + Math.sin(elapsed * 0.5) * 0.5, Math.cos(elapsed * 0.25) * 12);
+          camera.lookAt(0, 2.2, -3);
+        } else if ((state.mode === 'LOBBY' || state.mode === 'PLAYING') && !state.modalOpen) {
+          updatePlayer(dt);
+
+          if (state.mode === 'LOBBY') {
+            updateLobbyPortals(dt, elapsed);
+          } else if (state.mode === 'PLAYING') {
+            state.matchTime += dt;
+            updateMonsters(dt);
+            updatePickupsAndTower(dt, elapsed);
+            updateProjectilesAndEffects(dt);
+
+            // Luces parpadeantes de terror/colegio/fuego
+            state.flickerLights.forEach((fl) => {
+              const wave = fl.harsh
+                ? (Math.sin(elapsed * 18 + fl.seed) > 0.7 ? 0.35 : 1.0)
+                : (0.8 + Math.sin(elapsed * 7 + fl.seed) * 0.25);
+              fl.light.intensity = fl.base * wave;
+            });
+          }
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      // Inicio seguro al cargar la ventana
+      window.addEventListener('load', () => {
+        buildMenuBackdrop();
+        updateCameraLabels();
+        updateControlVisibility();
+
+        if (window.ReportService) {
+          window.ReportService.subscribe(renderReportsList);
+        }
+
+        runIntroParticles();
+        try { sound.playIntroSting(); } catch (_) {}
+        setTimeout(finishIntro, 4000);
+
+        animate();
+      });
+    })();
+  </script>
+</body>
+</html>
