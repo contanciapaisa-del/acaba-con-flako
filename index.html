@@ -434,23 +434,12 @@
       <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
         <div>
           <h2 class="font-display text-2xl font-bold text-white tracking-wide">PROPUESTAS Y REPORTES</h2>
-          <p class="text-xs text-slate-400">Envía sugerencias, reporta errores o revisa los mensajes en el Panel de Creador</p>
+          <p class="text-xs text-slate-400">Envía tus sugerencias o reporta errores directamente al creador</p>
         </div>
         <button data-close-modal="modal-reports" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold">✕</button>
       </div>
 
-      <!-- Pestañas -->
-      <div class="px-6 pt-4 flex gap-2">
-        <button id="tab-send-report" class="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-purple-600 text-white transition">
-          ✉ Enviar Mensaje
-        </button>
-        <button id="tab-creator-panel" class="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-white/5 text-slate-300 hover:bg-white/10 transition flex items-center justify-center gap-2">
-          🛠 Panel de Creador / Ver Reportes
-          <span id="reports-count-badge" class="px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-300 text-xs font-bold">0</span>
-        </button>
-      </div>
-
-      <!-- Contenido Pestaña 1: Formulario -->
+      <!-- Formulario -->
       <div id="panel-send-report" class="p-6 overflow-y-auto custom-scroll space-y-4">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
@@ -477,18 +466,6 @@
         <button id="btn-submit-report" class="btn-game w-full py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-bold text-sm tracking-wide shadow-lg">
           ENVIAR REPORTE / PROPUESTA
         </button>
-      </div>
-
-      <!-- Contenido Pestaña 2: Panel de Creador -->
-      <div id="panel-creator-view" class="hidden p-6 overflow-y-auto custom-scroll space-y-4">
-        <div class="rounded-2xl bg-purple-500/10 border border-purple-400/25 p-3.5 text-xs text-purple-100 leading-relaxed">
-          <div class="font-bold text-purple-300 mb-1">☁ Modalidad de Hosting y Edición del Creador</div>
-          Los mensajes se sincronizan automáticamente en la nube en tiempo real (o en memoria local si lo pruebas sin conexión). Puedes editar este archivo HTML directamente desde tu editor de código y publicarlo gratis como app web/PWA o empaquetarlo para Google Play (TWA / Capacitor) en Vercel, Netlify o Firebase Hosting.
-        </div>
-
-        <div id="reports-list" class="space-y-3">
-          <!-- Lista de reportes renderizada por JS -->
-        </div>
       </div>
     </div>
   </div>
@@ -663,139 +640,29 @@
   </div>
 
   <!-- =========================================================
-       SERVICIO DE REPORTES CON FIRESTORE (CON RESPALDO EN MEMORIA)
+       SERVICIO DE REPORTES CON SUPABASE
   ========================================================== -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    (() => {
+      const SUPABASE_URL = "https://tiopnvuvsrnnieeppyjx.supabase.co";
+      const SUPABASE_ANON_KEY = "https://tiopnvuvsrnnieeppyjx.supabase.co";
+      const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    const ReportService = {
-      db: null,
-      user: null,
-      appId: typeof __app_id !== 'undefined' ? __app_id : 'acaba-con-flako-app',
-      inMemoryReports: [
-        {
-          id: 'welcome-msg',
-          category: 'Propuesta de Mejora',
-          author: 'Sistema Acaba con Flak0',
-          message: '¡Bienvenido al Panel de Creador! Todos los reportes y propuestas que envíen los jugadores aparecerán aquí al instante.',
-          status: 'Revisado',
-          createdAt: Date.now()
+      window.ReportService = {
+        init() {},
+        subscribe() {},
+        async addReport({ category, author, message }) {
+          const { error } = await sb.from("reportes").insert([{
+            tipo: category || "Reporte",
+            jugador: author || "Anónimo",
+            mensaje: message
+          }]);
+          if (error) throw error;
+          return true;
         }
-      ],
-      listeners: [],
-
-      notify(items) {
-        const sorted = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        this.listeners.forEach(fn => fn(sorted));
-      },
-
-      subscribe(fn) {
-        this.listeners.push(fn);
-        this.notify(this.inMemoryReports);
-      },
-
-      async init() {
-        try {
-          if (typeof __firebase_config === 'undefined' || !__firebase_config) {
-            return;
-          }
-          const firebaseConfig = typeof __firebase_config === 'string'
-            ? JSON.parse(__firebase_config)
-            : __firebase_config;
-
-          const app = initializeApp(firebaseConfig);
-          const auth = getAuth(app);
-          this.db = getFirestore(app);
-
-          // Regla 3: Autenticar SIEMPRE antes de cualquier consulta Firestore
-          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            const cred = await signInWithCustomToken(auth, __initial_auth_token);
-            this.user = cred.user;
-          } else {
-            const cred = await signInAnonymously(auth);
-            this.user = cred.user;
-          }
-
-          if (!this.user) return;
-
-          // Regla 1 y 2: Ruta pública estricta sin consultas compuestas
-          const colRef = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'reports');
-          onSnapshot(
-            colRef,
-            (snap) => {
-              const docs = [];
-              snap.forEach((d) => docs.push({ id: d.id, ...d.data() }));
-              this.inMemoryReports = docs.length ? docs : this.inMemoryReports;
-              this.notify(docs);
-            },
-            (err) => {
-              console.warn('Firestore snapshot fallback:', err.message);
-            }
-          );
-        } catch (err) {
-          console.warn('Ejecutando sistema de reportes en modo memoria local:', err.message);
-        }
-      },
-
-      async addReport({ category, author, message }) {
-        const entry = {
-          category,
-          author: author || 'Jugador Anónimo',
-          message,
-          status: 'Pendiente',
-          createdAt: Date.now()
-        };
-
-        if (this.db && this.user) {
-          try {
-            const colRef = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'reports');
-            await addDoc(colRef, entry);
-            return true;
-          } catch (err) {
-            console.warn('Fallback al guardar reporte:', err.message);
-          }
-        }
-
-        this.inMemoryReports.unshift({ id: 'rep-' + Date.now(), ...entry });
-        this.notify(this.inMemoryReports);
-        return true;
-      },
-
-      async toggleStatus(id, currentStatus) {
-        const nextStatus = currentStatus === 'Revisado' ? 'Pendiente' : 'Revisado';
-        if (this.db && this.user && !id.startsWith('rep-') && id !== 'welcome-msg') {
-          try {
-            const docRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'reports', id);
-            await updateDoc(docRef, { status: nextStatus });
-            return;
-          } catch (err) {
-            console.warn('Fallback al actualizar estado:', err.message);
-          }
-        }
-        const found = this.inMemoryReports.find(r => r.id === id);
-        if (found) found.status = nextStatus;
-        this.notify(this.inMemoryReports);
-      },
-
-      async removeReport(id) {
-        if (this.db && this.user && !id.startsWith('rep-') && id !== 'welcome-msg') {
-          try {
-            const docRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'reports', id);
-            await deleteDoc(docRef);
-            return;
-          } catch (err) {
-            console.warn('Fallback al eliminar reporte:', err.message);
-          }
-        }
-        this.inMemoryReports = this.inMemoryReports.filter(r => r.id !== id);
-        this.notify(this.inMemoryReports);
-      }
-    };
-
-    window.ReportService = ReportService;
-    ReportService.init();
+      };
+    })();
   </script>
 
   <!-- =========================================================
@@ -3899,48 +3766,43 @@
         buildLobby();
       });
 
-      // Pestañas y envío de Propuestas / Reportes
-      const tabSend = document.getElementById('tab-send-report');
-      const tabCreator = document.getElementById('tab-creator-panel');
-      const panelSend = document.getElementById('panel-send-report');
-      const panelCreator = document.getElementById('panel-creator-view');
+      // Envío de Propuestas / Reportes a Supabase
+      const btnSubmitReport = document.getElementById("btn-submit-report");
+      if (btnSubmitReport) {
+        btnSubmitReport.addEventListener("click", async () => {
+          const category = document.getElementById("report-category").value;
+          const author = document.getElementById("report-author").value.trim();
+          const message = document.getElementById("report-message").value.trim();
+          const fb = document.getElementById("report-feedback");
 
-      tabSend.addEventListener('click', () => {
-        tabSend.className = 'flex-1 py-2.5 rounded-xl font-semibold text-sm bg-purple-600 text-white transition';
-        tabCreator.className = 'flex-1 py-2.5 rounded-xl font-semibold text-sm bg-white/5 text-slate-300 hover:bg-white/10 transition flex items-center justify-center gap-2';
-        panelSend.classList.remove('hidden');
-        panelCreator.classList.add('hidden');
-      });
+          if (message.length < 5) {
+            fb.textContent = "Por favor escribe un mensaje de al menos 5 caracteres.";
+            fb.className = "rounded-xl px-4 py-2.5 text-xs font-semibold bg-red-500/20 border border-red-400/40 text-red-200";
+            fb.classList.remove("hidden");
+            return;
+          }
 
-      tabCreator.addEventListener('click', () => {
-        tabCreator.className = 'flex-1 py-2.5 rounded-xl font-semibold text-sm bg-purple-600 text-white transition flex items-center justify-center gap-2';
-        tabSend.className = 'flex-1 py-2.5 rounded-xl font-semibold text-sm bg-white/5 text-slate-300 hover:bg-white/10 transition';
-        panelCreator.classList.remove('hidden');
-        panelSend.classList.add('hidden');
-      });
-
-      document.getElementById('btn-submit-report').addEventListener('click', async () => {
-        const category = document.getElementById('report-category').value;
-        const author = document.getElementById('report-author').value.trim();
-        const message = document.getElementById('report-message').value.trim();
-        const fb = document.getElementById('report-feedback');
-
-        if (message.length < 5) {
-          fb.textContent = 'Por favor escribe un mensaje de al menos 5 caracteres.';
-          fb.className = 'rounded-xl px-4 py-2.5 text-xs font-semibold bg-red-500/20 border border-red-400/40 text-red-200';
-          fb.classList.remove('hidden');
-          return;
-        }
-
-        if (window.ReportService) {
-          await window.ReportService.addReport({ category, author, message });
-        }
-        sound.playPickup();
-        document.getElementById('report-message').value = '';
-        fb.textContent = '✓ ¡Mensaje enviado correctamente! Ya puedes verlo en el Panel de Creador.';
-        fb.className = 'rounded-xl px-4 py-2.5 text-xs font-semibold bg-emerald-500/20 border border-emerald-400/40 text-emerald-200';
-        fb.classList.remove('hidden');
-      });
+          btnSubmitReport.disabled = true;
+          btnSubmitReport.textContent = "ENVIANDO...";
+          try {
+            if (!window.ReportService) throw new Error("Servicio de reportes no disponible.");
+            await window.ReportService.addReport({ category, author, message });
+            sound.playPickup();
+            document.getElementById("report-message").value = "";
+            fb.textContent = "✓ ¡Mensaje enviado correctamente! Gracias por ayudar a mejorar Acaba con Flak0.";
+            fb.className = "rounded-xl px-4 py-2.5 text-xs font-semibold bg-emerald-500/20 border border-emerald-400/40 text-emerald-200";
+            fb.classList.remove("hidden");
+          } catch (err) {
+            fb.textContent = "✕ No se pudo enviar el mensaje. Inténtalo de nuevo en unos segundos.";
+            fb.className = "rounded-xl px-4 py-2.5 text-xs font-semibold bg-red-500/20 border border-red-400/40 text-red-200";
+            fb.classList.remove("hidden");
+            console.error("Error enviando reporte a Supabase:", err);
+          } finally {
+            btnSubmitReport.disabled = false;
+            btnSubmitReport.textContent = "ENVIAR REPORTE / PROPUESTA";
+          }
+        });
+      }
 
       function renderReportsList(reports) {
         document.getElementById('reports-count-badge').textContent = reports.length;

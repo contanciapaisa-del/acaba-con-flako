@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel Privado — Acaba con Flak0</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root { --bg:#0d0d14; --card:#171724; --accent:#9b5cff; --ok:#22c55e; --del:#ef4444; --txt:#f1f5f9; --muted:#94a3b8; }
+    * { box-sizing:border-box; font-family:system-ui,-apple-system,sans-serif; }
+    body { margin:0; background:var(--bg); color:var(--txt); min-height:100vh; padding:16px; }
+    .wrap { max-width:900px; margin:0 auto; }
+    .card { background:var(--card); border:1px solid #2a2a3f; border-radius:12px; padding:20px; margin-bottom:16px; }
+    h1 { margin:0 0 12px; font-size:22px; }
+    input,button,select { padding:10px 12px; border-radius:8px; border:1px solid #33334d; background:#0f0f1a; color:var(--txt); font-size:15px; }
+    input { width:100%; margin-bottom:10px; }
+    button { cursor:pointer; background:var(--accent); border:none; font-weight:600; }
+    button.sec { background:#27273d; }
+    button.ok { background:var(--ok); color:#052e16; }
+    button.del { background:var(--del); }
+    .top { display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between; align-items:center; margin-bottom:16px; }
+    .badge { display:inline-block; padding:3px 9px; border-radius:999px; font-size:12px; font-weight:700; margin-right:6px; }
+    .b-pendiente { background:#78350f; color:#fde68a; }
+    .b-leido { background:#1e3a8a; color:#bfdbfe; }
+    .b-resuelto { background:#14532d; color:#bbf7d0; }
+    .meta { color:var(--muted); font-size:13px; margin:6px 0; }
+    .msg { white-space:pre-wrap; line-height:1.45; margin:10px 0; }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .hidden { display:none; }
+    #err { color:#fca5a5; margin-top:8px; font-size:14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="loginBox" class="card">
+      <h1>Panel de Creador — Acaba con Flak0</h1>
+      <p class="meta">Acceso privado únicamente para el administrador.</p>
+      <input id="email" type="email" placeholder="Correo de administrador" autocomplete="username" />
+      <input id="pass" type="password" placeholder="Contraseña" autocomplete="current-password" />
+      <button id="btnLogin" style="width:100%">Iniciar sesión</button>
+      <div id="err"></div>
+    </div>
+
+    <div id="panelBox" class="hidden">
+      <div class="top">
+        <h1>Reportes y Propuestas (<span id="total">0</span>)</h1>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <select id="filtro">
+            <option value="todos">Todos</option>
+            <option value="pendiente">Pendientes</option>
+            <option value="leido">Leídos</option>
+            <option value="resuelto">Resueltos</option>
+          </select>
+          <button id="btnRefresh" class="sec">Actualizar</button>
+          <button id="btnLogout" class="del">Salir</button>
+        </div>
+      </div>
+      <div id="lista"></div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://tiopnvuvsrnnieeppyjx.supabase.co";
+    const SUPABASE_ANON_KEY = "https://tiopnvuvsrnnieeppyjx.supabase.co";
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const loginBox = document.getElementById("loginBox");
+    const panelBox = document.getElementById("panelBox");
+    const lista = document.getElementById("lista");
+    const totalEl = document.getElementById("total");
+    const errEl = document.getElementById("err");
+    const filtro = document.getElementById("filtro");
+
+    async function cargarReportes() {
+      lista.textContent = "Cargando reportes...";
+      let q = sb.from("reportes").select("*").order("created_at", { ascending: false });
+      if (filtro.value !== "todos") q = q.eq("estado", filtro.value);
+      const { data, error } = await q;
+      if (error) { lista.textContent = "Error: " + error.message; return; }
+      totalEl.textContent = data.length;
+      lista.textContent = "";
+      if (!data.length) {
+        const p = document.createElement("p");
+        p.className = "meta";
+        p.textContent = "No hay reportes en esta categoría.";
+        lista.appendChild(p);
+        return;
+      }
+      data.forEach(r => {
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const head = document.createElement("div");
+        const bEstado = document.createElement("span");
+        bEstado.className = "badge b-" + (r.estado || "pendiente");
+        bEstado.textContent = (r.estado || "pendiente").toUpperCase();
+        const bTipo = document.createElement("span");
+        bTipo.className = "badge";
+        bTipo.style.background = "#3b1d6e";
+        bTipo.textContent = r.tipo || "Reporte";
+        head.append(bEstado, bTipo);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const fecha = new Date(r.created_at).toLocaleString();
+        meta.textContent = `Jugador: ${r.jugador || "Anónimo"} • ${fecha}`;
+
+        const msg = document.createElement("div");
+        msg.className = "msg";
+        msg.textContent = r.mensaje;
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+
+        const btnLeido = document.createElement("button");
+        btnLeido.className = "sec";
+        btnLeido.textContent = "Marcar leído";
+        btnLeido.onclick = async () => { await sb.from("reportes").update({ estado: "leido" }).eq("id", r.id); cargarReportes(); };
+
+        const btnRes = document.createElement("button");
+        btnRes.className = "ok";
+        btnRes.textContent = "Resuelto";
+        btnRes.onclick = async () => { await sb.from("reportes").update({ estado: "resuelto" }).eq("id", r.id); cargarReportes(); };
+
+        const btnDel = document.createElement("button");
+        btnDel.className = "del";
+        btnDel.textContent = "Eliminar";
+        btnDel.onclick = async () => {
+          if (!confirm("¿Eliminar este reporte definitivamente?")) return;
+          await sb.from("reportes").delete().eq("id", r.id);
+          cargarReportes();
+        };
+
+        actions.append(btnLeido, btnRes, btnDel);
+        card.append(head, meta, msg, actions);
+        lista.appendChild(card);
+      });
+    }
+
+    async function verificarSesion() {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        loginBox.classList.add("hidden");
+        panelBox.classList.remove("hidden");
+        cargarReportes();
+      } else {
+        panelBox.classList.add("hidden");
+        loginBox.classList.remove("hidden");
+      }
+    }
+
+    async function iniciarSesion() {
+      errEl.textContent = "";
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("pass").value;
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) { errEl.textContent = "Acceso denegado: " + error.message; return; }
+      verificarSesion();
+    }
+
+    document.getElementById("btnLogin").onclick = iniciarSesion;
+    document.getElementById("pass").addEventListener("keydown", e => { if (e.key === "Enter") iniciarSesion(); });
+    document.getElementById("btnLogout").onclick = async () => { await sb.auth.signOut(); verificarSesion(); };
+    document.getElementById("btnRefresh").onclick = cargarReportes;
+    filtro.onchange = cargarReportes;
+
+    verificarSesion();
+  </script>
+</body>
+</html>
