@@ -3468,6 +3468,7 @@
         document.getElementById('stat-kills').textContent = `${state.kills}/7`;
         document.getElementById('stat-cannons').textContent = state.cannonShots;
 
+        if (window.FlakoAccounts && window.FlakoAccounts.onMatchEnd) window.FlakoAccounts.onMatchEnd(victory);
         openModal('modal-endgame');
       }
 
@@ -3958,6 +3959,850 @@
         animate();
       });
     })();
-  </script>
+  
+/* FLAKO_ACCOUNTS_JS_START */
+(function () {
+  const SB_URL = "https://tiopnvuvsrnnieeppyjx.supabase.co";
+  const SB_KEY = "sb_publishable_pDw8S2wql-79PeeSavcDfg_xujNr3zr";
+
+  const CATALOGO_LOGROS = [
+    { codigo: "primera_cuenta", titulo: "Nuevo Recluta", desc: "Creaste tu cuenta en Acaba con Flak0", premio: "Insignia Fundador" },
+    { codigo: "primera_partida", titulo: "Bautismo de Fuego", desc: "Completaste tu primera partida", premio: "+100 XP Bonus" },
+    { codigo: "primera_victoria", titulo: "Cazador de Flak0", desc: "Venciste a Flak0 y sus 6 aliados", premio: "Aura Dorada" },
+    { codigo: "speedrun_90", titulo: "Relámpago Letal", desc: "Ganaste una partida en menos de 90 segundos", premio: "Título Velocista" },
+    { codigo: "artillero", titulo: "Maestro de la Torre", desc: "Activaste los cañones de la torre en combate", premio: "Efecto Cañón Neón" },
+    { codigo: "veterano_5", titulo: "Veterano de Arena", desc: "Completaste 5 partidas registradas", premio: "Marco Épico" },
+    { codigo: "leyenda_3win", titulo: "Terror de Flak0", desc: "Alcanzaste 3 victorias totales", premio: "Skin Especial Flak0" },
+    { codigo: "nivel_5", titulo: "Rango Élite", desc: "Subiste tu cuenta al Nivel 5", premio: "Recompensa Misteriosa" }
+  ];
+
+  const accState = {
+    sb: null,
+    user: null,
+    perfil: null,
+    records: [],
+    logros: [],
+    open: false,
+    activeTab: "cuenta"
+  };
+
+  function esc(v) {
+    const d = document.createElement("div");
+    d.textContent = String(v == null ? "" : v);
+    return d.innerHTML;
+  }
+
+  function fmtTime(sec) {
+    if (sec == null || isNaN(Number(sec))) return "--:--";
+    const s = Math.max(0, Math.floor(Number(sec)));
+    return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "";
+    try {
+      return new Date(iso).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" });
+    } catch (_) { return ""; }
+  }
+
+  function notifyGame(msg) {
+    if (typeof showToast === "function") {
+      try { showToast(msg); return; } catch (_) {}
+    }
+    console.log("[FlakoAccounts]", msg);
+  }
+
+  function showAlert(msg, ok) {
+    const el = document.getElementById("flako-acc-alert");
+    if (!el) return;
+    if (!msg) { el.classList.add("hidden"); return; }
+    el.textContent = msg;
+    el.className = "px-4 py-2.5 rounded-xl text-sm font-medium border " + (ok
+      ? "bg-emerald-950/70 border-emerald-500/50 text-emerald-200"
+      : "bg-rose-950/70 border-rose-500/50 text-rose-200");
+  }
+
+  function getClient() {
+    if (accState.sb) return accState.sb;
+    if (window.__flakoSB) { accState.sb = window.__flakoSB; return accState.sb; }
+    if (!window.supabase || !window.supabase.createClient) return null;
+    accState.sb = window.supabase.createClient(SB_URL, SB_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    window.__flakoSB = accState.sb;
+    return accState.sb;
+  }
+
+  function setGameModalLock(isOpen) {
+    accState.open = isOpen;
+    try {
+      if (typeof state !== "undefined") {
+        state.modalOpen = isOpen;
+        if (isOpen && document.pointerLockElement) document.exitPointerLock();
+        if (typeof updatePointerLockBanner === "function") updatePointerLockBanner();
+      }
+    } catch (_) {}
+  }
+
+  function openAccModal(tabName) {
+    const modal = document.getElementById("flako-acc-modal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    setGameModalLock(true);
+    showAlert("", true);
+    switchTab(tabName || "cuenta");
+    if (tabName && tabName !== "cuenta") loadPublicBoard();
+  }
+
+  function closeAccModal() {
+    const modal = document.getElementById("flako-acc-modal");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    setGameModalLock(false);
+  }
+
+  function switchTab(tabName) {
+    accState.activeTab = tabName;
+    document.querySelectorAll(".flako-tab-panel").forEach(p => p.classList.add("hidden"));
+    const panel = document.getElementById("ftab-" + tabName);
+    if (panel) panel.classList.remove("hidden");
+    document.querySelectorAll(".flako-tab-btn").forEach(b => {
+      const active = b.getAttribute("data-ftab") === tabName;
+      b.className = "flako-tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold cursor-pointer " + (active
+        ? "bg-indigo-600 text-white"
+        : "bg-slate-800 text-slate-300 hover:bg-slate-700");
+    });
+    if (tabName !== "cuenta") loadPublicBoard();
+  }
+
+  function switchAuthMode(mode) {
+    showAlert("", true);
+    const map = {
+      login: ["form-flako-login", "btn-auth-mode-login"],
+      register: ["form-flako-register", "btn-auth-mode-register"],
+      recover: ["form-flako-recover", "btn-auth-mode-recover"]
+    };
+    Object.keys(map).forEach(k => {
+      const f = document.getElementById(map[k][0]);
+      const b = document.getElementById(map[k][1]);
+      if (f) f.classList.toggle("hidden", k !== mode);
+      if (b) b.className = "px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold cursor-pointer " + (k === mode
+        ? "bg-indigo-600 text-white"
+        : "text-slate-300 hover:text-white");
+    });
+  }
+
+  function updateHudButton() {
+    const lbl = document.getElementById("flako-acc-btn-label");
+    if (!lbl) return;
+    if (accState.perfil) {
+      lbl.textContent = accState.perfil.apodo + " · Nv." + (accState.perfil.nivel || 1);
+    } else if (accState.user) {
+      lbl.textContent = "Mi Cuenta";
+    } else {
+      lbl.textContent = "Cuenta / Entrar";
+    }
+  }
+
+  function renderMyProfile() {
+    updateHudButton();
+    const guestBox = document.getElementById("flako-auth-guest");
+    const profBox = document.getElementById("flako-auth-profile");
+    if (!guestBox || !profBox) return;
+
+    if (!accState.user || !accState.perfil) {
+      guestBox.classList.remove("hidden");
+      profBox.classList.add("hidden");
+      return;
+    }
+
+    guestBox.classList.add("hidden");
+    profBox.classList.remove("hidden");
+
+    const p = accState.perfil;
+    const pts = Number(p.puntos_totales || 0);
+    const lvl = Number(p.nivel || 1);
+    const xpActual = pts % 300;
+    const pct = Math.min(100, Math.round((xpActual / 300) * 100));
+
+    document.getElementById("fp-apodo").textContent = p.apodo;
+    document.getElementById("fp-nivel-badge").textContent = "Nivel " + lvl;
+    document.getElementById("fp-email").textContent = accState.user.email || "";
+    document.getElementById("fp-xp-text").textContent = xpActual + " / 300 pts";
+    document.getElementById("fp-xp-bar").style.width = pct + "%";
+    document.getElementById("fp-puntos").textContent = String(pts);
+    document.getElementById("fp-partidas").textContent = String(p.partidas_jugadas || 0);
+    document.getElementById("fp-victorias").textContent = String(p.victorias || 0);
+    document.getElementById("fp-logros-count").textContent = String(accState.logros.length);
+
+    const prog = (p.progreso && typeof p.progreso === "object") ? p.progreso : {};
+    const mapas = Array.isArray(prog.niveles_desbloqueados) && prog.niveles_desbloqueados.length
+      ? prog.niveles_desbloqueados : ["NeverlynD"];
+    document.getElementById("fp-mapas").innerHTML = mapas.map(m =>
+      `<span class="px-2.5 py-1 rounded-lg bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 font-semibold">✓ ${esc(m)}</span>`
+    ).join("");
+
+    const premiosSet = new Set(Array.isArray(prog.recompensas) ? prog.recompensas : []);
+    accState.logros.forEach(l => { if (l.premio) premiosSet.add(l.premio); });
+    const premios = Array.from(premiosSet);
+    document.getElementById("fp-recompensas").innerHTML = premios.length
+      ? premios.map(r => `<span class="px-2.5 py-1 rounded-lg bg-amber-950/70 border border-amber-500/40 text-amber-200 font-semibold">🎁 ${esc(r)}</span>`).join("")
+      : `<span class="text-slate-400">Desbloquea logros para reservar futuras recompensas.</span>`;
+
+    const recEl = document.getElementById("fp-records");
+    recEl.innerHTML = accState.records.length
+      ? accState.records.map(r => `
+        <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800">
+          <div><span class="font-bold text-white">${esc(r.mapa)}</span> <span class="text-slate-400">(${esc(r.modo)})</span></div>
+          <div class="text-right"><span class="text-amber-300 font-bold">${esc(r.mejor_puntaje)} pts</span> · <span class="text-sky-300">⏱ ${fmtTime(r.mejor_tiempo_seg)}</span></div>
+        </div>`).join("")
+      : `<p class="text-slate-400">Aún no tienes récords guardados. ¡Juega una partida para registrar tu primera marca!</p>`;
+
+    const unlockedMap = new Map(accState.logros.map(l => [l.codigo_logro, l]));
+    document.getElementById("fp-mis-logros").innerHTML = CATALOGO_LOGROS.map(c => {
+      const got = unlockedMap.get(c.codigo);
+      return `<div class="p-2.5 rounded-xl border ${got ? "bg-indigo-950/50 border-indigo-500/50" : "bg-slate-950/60 border-slate-800 opacity-60"}">
+        <div class="flex items-center justify-between gap-2">
+          <span class="font-bold text-xs ${got ? "text-white" : "text-slate-400"}">${got ? "🏆" : "🔒"} ${esc(c.titulo)}</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full ${got ? "bg-amber-500/20 text-amber-200" : "bg-slate-800 text-slate-400"}">🎁 ${esc(c.premio)}</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1">${esc(c.desc)}</p>
+      </div>`;
+    }).join("");
+
+    try {
+      const repInput = document.getElementById("report-player") || document.getElementById("report-name");
+      if (repInput && !repInput.value) repInput.value = p.apodo;
+    } catch (_) {}
+
+    try {
+      const snapshot = { perfil: p, records: accState.records, logros: accState.logros };
+      window.FlakoPlayerData = snapshot;
+      localStorage.setItem("flako_progress_" + accState.user.id, JSON.stringify(snapshot));
+    } catch (_) {}
+  }
+
+  async function logActivity(tipo, detalle) {
+    const sb = getClient();
+    if (!sb || !accState.user || !accState.perfil) return;
+    await sb.from("actividad_usuarios").insert({
+      user_id: accState.user.id,
+      apodo: accState.perfil.apodo,
+      tipo: tipo,
+      detalle: detalle
+    });
+  }
+
+  async function unlockAchievement(codigo, silent) {
+    const sb = getClient();
+    if (!sb || !accState.user || !accState.perfil) return false;
+    if (accState.logros.some(l => l.codigo_logro === codigo)) return false;
+    const meta = CATALOGO_LOGROS.find(c => c.codigo === codigo);
+    if (!meta) return false;
+
+    const { data, error } = await sb.from("logros_usuario").insert({
+      user_id: accState.user.id,
+      codigo_logro: meta.codigo,
+      titulo: meta.titulo,
+      descripcion: meta.desc,
+      premio: meta.premio
+    }).select().maybeSingle();
+
+    if (error) {
+      if (error.code === "23505") return false;
+      console.warn("Error guardando logro:", error);
+      return false;
+    }
+    if (data) accState.logros.unshift(data);
+    await logActivity("logro", "Desbloqueó el logro \"" + meta.titulo + "\" (Premio futuro: " + meta.premio + ")");
+    if (!silent) notifyGame("🏆 ¡Logro desbloqueado: " + meta.titulo + "!");
+    return true;
+  }
+
+  async function ensureProfile(user, preferredApodo) {
+    const sb = getClient();
+    let { data: prof } = await sb.from("perfiles").select("*").eq("id", user.id).maybeSingle();
+    if (prof) return prof;
+
+    let base = (preferredApodo || (user.user_metadata && user.user_metadata.apodo) || (user.email || "Jugador").split("@")[0]).trim();
+    base = base.replace(/[^a-zA-Z0-9_. -]/g, "").slice(0, 18) || "Jugador";
+    let apodoTry = base;
+
+    for (let i = 0; i < 4; i++) {
+      const { data: created, error } = await sb.from("perfiles").insert({
+        id: user.id,
+        apodo: apodoTry,
+        nivel: 1,
+        puntos_totales: 0,
+        partidas_jugadas: 0,
+        victorias: 0,
+        progreso: { niveles_desbloqueados: ["NeverlynD"], recompensas: [] }
+      }).select().single();
+      if (!error && created) {
+        accState.perfil = created;
+        await logActivity("cuenta", "Se unió a Acaba con Flak0");
+        await unlockAchievement("primera_cuenta", true);
+        return created;
+      }
+      apodoTry = base.slice(0, 14) + "_" + Math.floor(100 + Math.random() * 899);
+    }
+    return null;
+  }
+
+  async function loadMyProgress(showWelcome) {
+    const sb = getClient();
+    if (!sb || !accState.user) return;
+    const prof = await ensureProfile(accState.user);
+    if (!prof) return;
+    accState.perfil = prof;
+
+    const [recRes, logRes] = await Promise.all([
+      sb.from("records_mapa").select("*").eq("user_id", accState.user.id).order("mejor_puntaje", { ascending: false }),
+      sb.from("logros_usuario").select("*").eq("user_id", accState.user.id).order("desbloqueado_en", { ascending: false })
+    ]);
+    accState.records = recRes.data || [];
+    accState.logros = logRes.data || [];
+
+    if (!accState.logros.some(l => l.codigo_logro === "primera_cuenta")) {
+      await unlockAchievement("primera_cuenta", true);
+    }
+
+    renderMyProfile();
+    if (showWelcome) {
+      notifyGame("👤 Sesión cargada: " + prof.apodo + " (Nv." + (prof.nivel || 1) + " · " + accState.logros.length + " logros)");
+    }
+  }
+
+  async function loadPublicBoard() {
+    const sb = getClient();
+    if (!sb) return;
+
+    const [perfRes, logRes, actRes, recRes] = await Promise.all([
+      sb.from("perfiles").select("id, apodo, nivel, puntos_totales, partidas_jugadas, victorias").order("puntos_totales", { ascending: false }).limit(30),
+      sb.from("logros_usuario").select("*").order("desbloqueado_en", { ascending: false }).limit(60),
+      sb.from("actividad_usuarios").select("*").order("created_at", { ascending: false }).limit(40),
+      sb.from("records_mapa").select("*").order("mejor_puntaje", { ascending: false }).limit(30)
+    ]);
+
+    const perfiles = perfRes.data || [];
+    const apodoById = new Map(perfiles.map(p => [p.id, p.apodo]));
+
+    const logros = logRes.data || [];
+    const logEl = document.getElementById("pub-logros-list");
+    if (logEl) {
+      logEl.innerHTML = logros.length
+        ? logros.map(l => {
+          const ap = apodoById.get(l.user_id) || "Jugador";
+          return `<div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div class="text-sm font-bold text-white">🏆 ${esc(l.titulo)} <span class="text-indigo-300 font-semibold">· ${esc(ap)}</span></div>
+              <p class="text-xs text-slate-400">${esc(l.descripcion || "")}</p>
+            </div>
+            <div class="text-right">
+              ${l.premio ? `<span class="inline-block px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-200 text-[11px] font-bold">🎁 ${esc(l.premio)}</span>` : ""}
+              <div class="text-[10px] text-slate-500 mt-1">${fmtDate(l.desbloqueado_en)}</div>
+            </div>
+          </div>`;
+        }).join("")
+        : `<p class="text-xs text-slate-400">Todavía no hay logros registrados. ¡Crea tu cuenta y sé el primero!</p>`;
+    }
+
+    const catEl = document.getElementById("pub-logros-catalog");
+    if (catEl) {
+      const myCodes = new Set(accState.logros.map(x => x.codigo_logro));
+      catEl.innerHTML = CATALOGO_LOGROS.map(c => {
+        const has = myCodes.has(c.codigo);
+        return `<div class="p-2.5 rounded-xl bg-slate-900/60 border ${has ? "border-emerald-500/40" : "border-slate-800"}">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-white">${has ? "✅" : "⭐"} ${esc(c.titulo)}</span>
+            <span class="text-[10px] text-amber-300">🎁 ${esc(c.premio)}</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">${esc(c.desc)}</p>
+        </div>`;
+      }).join("");
+    }
+
+    const acts = actRes.data || [];
+    const actEl = document.getElementById("pub-actividad-list");
+    if (actEl) {
+      const icons = { victoria: "👑", record: "⚡", logro: "🏆", cuenta: "✨", partida: "🎮" };
+      actEl.innerHTML = acts.length
+        ? acts.map(a => `<div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2">
+          <div class="text-xs sm:text-sm"><span class="mr-1.5">${icons[a.tipo] || "📌"}</span><span class="font-bold text-indigo-300">${esc(a.apodo)}</span> <span class="text-slate-200">${esc(a.detalle)}</span></div>
+          <span class="text-[10px] text-slate-500 whitespace-nowrap">${fmtDate(a.created_at)}</span>
+        </div>`).join("")
+        : `<p class="text-xs text-slate-400">Sin actividad pública todavía.</p>`;
+    }
+
+    const rankEl = document.getElementById("pub-ranking-list");
+    if (rankEl) {
+      rankEl.innerHTML = perfiles.length
+        ? perfiles.map((p, idx) => `<div class="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800 text-xs">
+          <div class="flex items-center gap-2">
+            <span class="font-extrabold text-amber-300 w-6">#${idx + 1}</span>
+            <span class="font-bold text-white">${esc(p.apodo)}</span>
+            <span class="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-200 text-[10px]">Nv.${p.nivel || 1}</span>
+          </div>
+          <div class="text-slate-300"><span class="font-bold text-amber-300">${p.puntos_totales || 0} pts</span> · 🏆 ${p.victorias || 0} vic · 🎮 ${p.partidas_jugadas || 0}</div>
+        </div>`).join("")
+        : `<p class="text-xs text-slate-400">Aún no hay jugadores en el ranking.</p>`;
+    }
+
+    const recs = recRes.data || [];
+    const pubRecEl = document.getElementById("pub-records-list");
+    if (pubRecEl) {
+      pubRecEl.innerHTML = recs.length
+        ? recs.map(r => `<div class="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800 text-xs">
+          <div><span class="font-bold text-indigo-300">${esc(apodoById.get(r.user_id) || "Jugador")}</span> · <span class="text-white">${esc(r.mapa)}</span> <span class="text-slate-400">(${esc(r.modo)})</span></div>
+          <div><span class="font-bold text-amber-300">${r.mejor_puntaje} pts</span> · <span class="text-sky-300">⏱ ${fmtTime(r.mejor_tiempo_seg)}</span></div>
+        </div>`).join("")
+        : `<p class="text-xs text-slate-400">Aún no hay récords por mapa.</p>`;
+    }
+  }
+
+  async function onMatchEnd(victory) {
+    const sb = getClient();
+    if (!sb || !accState.user || !accState.perfil) {
+      notifyGame("💡 Inicia sesión en Cuenta para guardar tus récords, nivel y logros.");
+      return;
+    }
+
+    const kills = (typeof state !== "undefined" && Number(state.kills)) || 0;
+    const matchTime = (typeof state !== "undefined" && Number(state.matchTime)) || 0;
+    const cannons = (typeof state !== "undefined" && Number(state.cannonShots)) || 0;
+    const mapa = (typeof state !== "undefined" && (state.currentMap || state.selectedMap || state.map)) || "NeverlynD";
+    const modo = (typeof state !== "undefined" && (state.gameMode || state.selectedMode)) || "Kill Flako";
+
+    const bonusTiempo = (victory && matchTime > 0) ? Math.max(0, Math.round(180 - matchTime)) : 0;
+    const puntosGanados = (kills * 40) + (victory ? 250 : 35) + bonusTiempo + (cannons * 15);
+
+    const p = accState.perfil;
+    const newPartidas = Number(p.partidas_jugadas || 0) + 1;
+    const newVictorias = Number(p.victorias || 0) + (victory ? 1 : 0);
+    const newPuntos = Number(p.puntos_totales || 0) + puntosGanados;
+    const newNivel = 1 + Math.floor(newPuntos / 300);
+
+    const oldProg = (p.progreso && typeof p.progreso === "object") ? p.progreso : {};
+    const mapasSet = new Set(Array.isArray(oldProg.niveles_desbloqueados) ? oldProg.niveles_desbloqueados : ["NeverlynD"]);
+    mapasSet.add(String(mapa));
+    if (victory) mapasSet.add("Cithell");
+
+    const rewSet = new Set(Array.isArray(oldProg.recompensas) ? oldProg.recompensas : []);
+    accState.logros.forEach(l => { if (l.premio) rewSet.add(l.premio); });
+
+    const newProgreso = Object.assign({}, oldProg, {
+      niveles_desbloqueados: Array.from(mapasSet),
+      recompensas: Array.from(rewSet),
+      kills_totales: Number(oldProg.kills_totales || 0) + kills,
+      cannons_totales: Number(oldProg.cannons_totales || 0) + cannons,
+      ultima_partida: { victory: !!victory, mapa: String(mapa), modo: String(modo), kills, matchTime, puntosGanados }
+    });
+
+    const { data: updProf, error: errProf } = await sb.from("perfiles").update({
+      nivel: newNivel,
+      puntos_totales: newPuntos,
+      partidas_jugadas: newPartidas,
+      victorias: newVictorias,
+      progreso: newProgreso,
+      ultima_actividad: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).eq("id", accState.user.id).select().single();
+
+    if (!errProf && updProf) accState.perfil = updProf;
+
+    const prevRec = accState.records.find(r => r.modo === String(modo) && r.mapa === String(mapa));
+    const bestScore = Math.max(puntosGanados, Number(prevRec ? prevRec.mejor_puntaje : 0));
+    let bestTime = prevRec ? prevRec.mejor_tiempo_seg : null;
+    let brokeTime = false;
+    if (victory && matchTime > 0 && (bestTime == null || matchTime < Number(bestTime))) {
+      bestTime = Number(matchTime.toFixed(2));
+      brokeTime = true;
+    }
+    const brokeScore = puntosGanados > Number(prevRec ? prevRec.mejor_puntaje : 0);
+
+    await sb.from("records_mapa").upsert({
+      user_id: accState.user.id,
+      modo: String(modo),
+      mapa: String(mapa),
+      mejor_puntaje: bestScore,
+      mejor_tiempo_seg: bestTime,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "user_id,modo,mapa" });
+
+    if (victory) {
+      await logActivity("victoria", "Ganó en " + mapa + " (" + puntosGanados + " pts · " + fmtTime(matchTime) + ")");
+    }
+    if (brokeScore || brokeTime) {
+      await logActivity("record", "Marcó nuevo récord en " + mapa + ": " + bestScore + " pts" + (bestTime != null ? " (" + fmtTime(bestTime) + ")" : ""));
+    }
+
+    await unlockAchievement("primera_partida", false);
+    if (victory) await unlockAchievement("primera_victoria", false);
+    if (victory && matchTime > 0 && matchTime <= 90) await unlockAchievement("speedrun_90", false);
+    if (cannons > 0) await unlockAchievement("artillero", false);
+    if (newPartidas >= 5) await unlockAchievement("veterano_5", false);
+    if (newVictorias >= 3) await unlockAchievement("leyenda_3win", false);
+    if (newNivel >= 5) await unlockAchievement("nivel_5", false);
+
+    await loadMyProgress(false);
+    notifyGame("💾 Progreso guardado: +" + puntosGanados + " pts (Nivel " + newNivel + ")");
+  }
+
+  function bindEvents() {
+    document.getElementById("btn-flako-account").addEventListener("click", () => openAccModal("cuenta"));
+    document.getElementById("btn-flako-community").addEventListener("click", () => openAccModal("logros"));
+    document.getElementById("btn-flako-close-modal").addEventListener("click", closeAccModal);
+
+    document.querySelectorAll(".flako-tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => switchTab(btn.getAttribute("data-ftab")));
+    });
+    document.querySelectorAll(".btn-flako-refresh-pub").forEach(btn => {
+      btn.addEventListener("click", loadPublicBoard);
+    });
+
+    document.getElementById("btn-auth-mode-login").addEventListener("click", () => switchAuthMode("login"));
+    document.getElementById("btn-auth-mode-register").addEventListener("click", () => switchAuthMode("register"));
+    document.getElementById("btn-auth-mode-recover").addEventListener("click", () => switchAuthMode("recover"));
+
+    const modal = document.getElementById("flako-acc-modal");
+    ["keydown", "keyup", "keypress"].forEach(ev => {
+      modal.addEventListener(ev, e => {
+        if (e.key === "Escape") { closeAccModal(); return; }
+        e.stopPropagation();
+      });
+    });
+
+    document.getElementById("form-flako-login").addEventListener("submit", async e => {
+      e.preventDefault();
+      const sb = getClient();
+      const email = document.getElementById("flako-login-email").value.trim();
+      const password = document.getElementById("flako-login-pass").value;
+      showAlert("Iniciando sesión...", true);
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) { showAlert("No se pudo iniciar sesión: " + error.message, false); return; }
+      accState.user = data.user;
+      await loadMyProgress(true);
+      showAlert("¡Bienvenido de vuelta! Todo tu progreso fue restaurado.", true);
+    });
+
+    document.getElementById("form-flako-register").addEventListener("submit", async e => {
+      e.preventDefault();
+      const sb = getClient();
+      const apodo = document.getElementById("flako-reg-apodo").value.trim();
+      const email = document.getElementById("flako-reg-email").value.trim();
+      const password = document.getElementById("flako-reg-pass").value;
+
+      if (!/^[a-zA-Z0-9_. -]{3,20}$/.test(apodo)) {
+        showAlert("El nombre de usuario debe tener entre 3 y 20 caracteres (letras, números, espacio, _ o -).", false);
+        return;
+      }
+      showAlert("Verificando disponibilidad y creando cuenta...", true);
+      const { data: dup } = await sb.from("perfiles").select("id").ilike("apodo", apodo).maybeSingle();
+      if (dup) {
+        showAlert("Ese nombre de usuario ya está en uso. Prueba con otro apodo.", false);
+        return;
+      }
+
+      const { data, error } = await sb.auth.signUp({
+        email,
+        password,
+        options: { data: { apodo } }
+      });
+      if (error) { showAlert("Error al crear cuenta: " + error.message, false); return; }
+      if (!data.session) {
+        showAlert("Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.", true);
+        return;
+      }
+      accState.user = data.user;
+      await ensureProfile(data.user, apodo);
+      await loadMyProgress(true);
+      showAlert("¡Cuenta creada con éxito! Ya estás guardando tu nivel, récords y logros.", true);
+    });
+
+    document.getElementById("form-flako-recover").addEventListener("submit", async e => {
+      e.preventDefault();
+      const sb = getClient();
+      const email = document.getElementById("flako-rec-email").value.trim();
+      showAlert("Enviando enlace de recuperación...", true);
+      const redirectTo = window.location.origin + window.location.pathname;
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
+      if (error) { showAlert("No se pudo enviar el correo: " + error.message, false); return; }
+      showAlert("Listo. Revisa tu correo (y carpeta de spam) y abre el enlace para crear tu nueva contraseña.", true);
+    });
+
+    document.getElementById("form-flako-newpass").addEventListener("submit", async e => {
+      e.preventDefault();
+      const sb = getClient();
+      const password = document.getElementById("flako-new-pass").value;
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) { showAlert("Error actualizando contraseña: " + error.message, false); return; }
+      document.getElementById("form-flako-newpass").classList.add("hidden");
+      showAlert("¡Contraseña actualizada con éxito! Ya puedes seguir jugando con tu cuenta.", true);
+      await loadMyProgress(false);
+    });
+
+    document.getElementById("btn-flako-sync").addEventListener("click", async () => {
+      await loadMyProgress(false);
+      showAlert("Progreso sincronizado con la nube.", true);
+    });
+
+    document.getElementById("btn-flako-logout").addEventListener("click", async () => {
+      const sb = getClient();
+      await sb.auth.signOut();
+      accState.user = null;
+      accState.perfil = null;
+      accState.records = [];
+      accState.logros = [];
+      renderMyProfile();
+      showAlert("Sesión cerrada correctamente.", true);
+    });
+
+    setInterval(() => {
+      const bar = document.getElementById("flako-acc-bar");
+      if (!bar || typeof state === "undefined") return;
+      const playing = state.mode === "PLAYING";
+      bar.classList.toggle("hidden", playing);
+    }, 300);
+  }
+
+  async function initAccounts() {
+    bindEvents();
+    const sb = getClient();
+    if (!sb) { console.warn("Supabase JS no cargado aun."); return; }
+
+    sb.auth.onAuthStateChange(async (event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        accState.user = session ? session.user : null;
+        openAccModal("cuenta");
+        document.getElementById("form-flako-newpass").classList.remove("hidden");
+        showAlert("Enlace verificado. Escribe tu nueva contraseña abajo.", true);
+        return;
+      }
+      if (event === "SIGNED_OUT") {
+        accState.user = null;
+        accState.perfil = null;
+        accState.records = [];
+        accState.logros = [];
+        renderMyProfile();
+      }
+    });
+
+    const { data } = await sb.auth.getSession();
+    if (data && data.session && data.session.user) {
+      accState.user = data.session.user;
+      await loadMyProgress(true);
+    } else {
+      renderMyProfile();
+    }
+
+    if (window.location.hash && window.location.hash.includes("type=recovery")) {
+      openAccModal("cuenta");
+      document.getElementById("form-flako-newpass").classList.remove("hidden");
+    }
+  }
+
+  window.FlakoAccounts = { onMatchEnd, open: openAccModal, close: closeAccModal, reload: loadMyProgress };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAccounts);
+  } else {
+    initAccounts();
+  }
+})();
+/* FLAKO_ACCOUNTS_JS_END */
+
+</script>
+<!-- FLAKO_ACCOUNTS_HTML_START -->
+<div id="flako-acc-bar" class="fixed top-3 right-3 z-[75] flex flex-wrap items-center gap-2 select-none">
+  <button id="btn-flako-community" type="button" class="px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-amber-400/50 text-amber-200 text-xs sm:text-sm font-bold shadow-lg backdrop-blur transition flex items-center gap-1.5 cursor-pointer">
+    <span>🏆</span><span>Logros y Actividad</span>
+  </button>
+  <button id="btn-flako-account" type="button" class="px-3 py-2 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-300/50 text-white text-xs sm:text-sm font-bold shadow-lg backdrop-blur transition flex items-center gap-1.5 cursor-pointer">
+    <span>👤</span><span id="flako-acc-btn-label">Cuenta / Entrar</span>
+  </button>
+</div>
+
+<div id="flako-acc-modal" class="hidden fixed inset-0 z-[95] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
+  <div class="w-full max-w-3xl max-h-[90vh] bg-slate-950 border border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-100">
+    <div class="px-5 py-4 bg-gradient-to-r from-slate-900 via-indigo-950/70 to-slate-900 border-b border-slate-800 flex items-center justify-between gap-3">
+      <div>
+        <h2 class="text-lg sm:text-xl font-extrabold tracking-wide text-white">Acaba con Flak0 · Cuentas y Comunidad</h2>
+        <p id="flako-acc-subtitle" class="text-xs text-slate-300">Guarda tu nivel, récords, logros y futuras recompensas en la nube.</p>
+      </div>
+      <button id="btn-flako-close-modal" type="button" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-200 hover:text-white font-bold transition cursor-pointer">✕</button>
+    </div>
+
+    <div class="px-4 pt-3 pb-2 bg-slate-900/80 border-b border-slate-800 flex flex-wrap gap-2">
+      <button type="button" data-ftab="cuenta" class="flako-tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold cursor-pointer bg-indigo-600 text-white">👤 Mi Cuenta</button>
+      <button type="button" data-ftab="logros" class="flako-tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold cursor-pointer bg-slate-800 text-slate-300 hover:bg-slate-700">🏆 Logros (Todos)</button>
+      <button type="button" data-ftab="actividad" class="flako-tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold cursor-pointer bg-slate-800 text-slate-300 hover:bg-slate-700">🌍 Actividad</button>
+      <button type="button" data-ftab="ranking" class="flako-tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold cursor-pointer bg-slate-800 text-slate-300 hover:bg-slate-700">📊 Ranking y Récords</button>
+    </div>
+
+    <div class="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
+      <div id="flako-acc-alert" class="hidden px-4 py-2.5 rounded-xl text-sm font-medium border"></div>
+
+      <section id="ftab-cuenta" class="flako-tab-panel space-y-4">
+        <div id="flako-auth-guest" class="space-y-4">
+          <div class="flex gap-2 bg-slate-900 p-1 rounded-xl border border-slate-800 w-fit">
+            <button type="button" id="btn-auth-mode-login" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold bg-indigo-600 text-white cursor-pointer">Iniciar Sesión</button>
+            <button type="button" id="btn-auth-mode-register" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold text-slate-300 hover:text-white cursor-pointer">Crear Cuenta</button>
+            <button type="button" id="btn-auth-mode-recover" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold text-slate-300 hover:text-white cursor-pointer">Recuperar Clave</button>
+          </div>
+
+          <form id="form-flako-login" class="space-y-3 bg-slate-900/70 p-4 rounded-xl border border-slate-800">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Correo electrónico</label>
+              <input id="flako-login-email" type="email" required placeholder="tu@correo.com" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white text-sm focus:outline-none focus:border-indigo-400">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Contraseña</label>
+              <input id="flako-login-pass" type="password" required minlength="6" placeholder="••••••••" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white text-sm focus:outline-none focus:border-indigo-400">
+            </div>
+            <button type="submit" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-sm text-white transition cursor-pointer">Entrar y cargar mi progreso</button>
+          </form>
+
+          <form id="form-flako-register" class="hidden space-y-3 bg-slate-900/70 p-4 rounded-xl border border-slate-800">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre de usuario (apodo público)</label>
+              <input id="flako-reg-apodo" type="text" required minlength="3" maxlength="20" placeholder="Ej: ElCazador99" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white text-sm focus:outline-none focus:border-emerald-400">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Correo electrónico</label>
+              <input id="flako-reg-email" type="email" required placeholder="tu@correo.com" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white text-sm focus:outline-none focus:border-emerald-400">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Contraseña (mínimo 6 caracteres)</label>
+              <input id="flako-reg-pass" type="password" required minlength="6" placeholder="Crea una contraseña segura" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white text-sm focus:outline-none focus:border-emerald-400">
+            </div>
+            <button type="submit" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-sm text-white transition cursor-pointer">Crear cuenta y empezar a guardar</button>
+          </form>
+
+          <form id="form-flako-recover" class="hidden space-y-3 bg-slate-900/70 p-4 rounded-xl border border-slate-800">
+            <p class="text-xs text-slate-300">Escribe el correo con el que te registraste y te enviaremos un enlace para crear una contraseña nueva.</p>
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Correo electrónico</label>
+              <input id="flako-rec-email" type="email" required placeholder="tu@correo.com" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white text-sm focus:outline-none focus:border-amber-400">
+            </div>
+            <button type="submit" class="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 font-bold text-sm text-white transition cursor-pointer">Enviar enlace de recuperación</button>
+          </form>
+        </div>
+
+        <form id="form-flako-newpass" class="hidden space-y-3 bg-amber-950/40 p-4 rounded-xl border border-amber-500/50">
+          <h3 class="font-bold text-amber-200 text-sm">🔐 Crea tu nueva contraseña</h3>
+          <input id="flako-new-pass" type="password" required minlength="6" placeholder="Nueva contraseña (mín. 6 caracteres)" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-amber-500/50 text-white text-sm">
+          <button type="submit" class="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 font-bold text-sm text-white cursor-pointer">Guardar nueva contraseña</button>
+        </form>
+
+        <div id="flako-auth-profile" class="hidden space-y-4">
+          <div class="p-4 rounded-xl bg-gradient-to-br from-indigo-950/80 to-slate-900 border border-indigo-500/40 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <span id="fp-apodo" class="text-xl font-extrabold text-white">Jugador</span>
+                <span id="fp-nivel-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/30 border border-indigo-400/50 text-indigo-200">Nivel 1</span>
+              </div>
+              <p id="fp-email" class="text-xs text-slate-400 mt-0.5"></p>
+              <div class="mt-2 w-56 max-w-full">
+                <div class="flex justify-between text-[11px] text-slate-300 mb-1">
+                  <span id="fp-xp-text">0 / 300 pts</span>
+                  <span>Siguiente nivel</span>
+                </div>
+                <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div id="fp-xp-bar" class="h-full bg-gradient-to-r from-indigo-400 to-emerald-400 transition-all" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button id="btn-flako-sync" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 cursor-pointer">↻ Sincronizar</button>
+              <button id="btn-flako-logout" type="button" class="px-3 py-1.5 rounded-lg bg-rose-600/80 hover:bg-rose-600 text-xs font-bold text-white cursor-pointer">Salir</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-center">
+              <div id="fp-puntos" class="text-lg font-extrabold text-amber-300">0</div>
+              <div class="text-[11px] text-slate-400">Puntos totales</div>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-center">
+              <div id="fp-partidas" class="text-lg font-extrabold text-sky-300">0</div>
+              <div class="text-[11px] text-slate-400">Partidas</div>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-center">
+              <div id="fp-victorias" class="text-lg font-extrabold text-emerald-300">0</div>
+              <div class="text-[11px] text-slate-400">Victorias</div>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-center">
+              <div id="fp-logros-count" class="text-lg font-extrabold text-purple-300">0</div>
+              <div class="text-[11px] text-slate-400">Logros</div>
+            </div>
+          </div>
+
+          <div class="grid sm:grid-cols-2 gap-3">
+            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">🗺️ Mapas y Niveles Desbloqueados</h4>
+              <div id="fp-mapas" class="flex flex-wrap gap-1.5 text-xs"></div>
+            </div>
+            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-amber-300/90 mb-2">🎁 Futuras Recompensas Acumuladas</h4>
+              <div id="fp-recompensas" class="flex flex-wrap gap-1.5 text-xs"></div>
+            </div>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">⏱️ Mis Récords por Mapa</h4>
+            <div id="fp-records" class="space-y-1.5 text-xs text-slate-300"></div>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">🏅 Mis Logros</h4>
+            <div id="fp-mis-logros" class="grid sm:grid-cols-2 gap-2"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="ftab-logros" class="flako-tab-panel hidden space-y-4">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-bold text-amber-300">🏆 Logros Desbloqueados por la Comunidad</h3>
+            <p class="text-xs text-slate-400">Lectura pública de todos los usuarios y sus premios futuros.</p>
+          </div>
+          <button type="button" class="btn-flako-refresh-pub px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold cursor-pointer">↻ Actualizar</button>
+        </div>
+        <div id="pub-logros-list" class="space-y-2"></div>
+        <div class="pt-2 border-t border-slate-800">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">🎯 Catálogo de Logros y Futuras Recompensas</h4>
+          <div id="pub-logros-catalog" class="grid sm:grid-cols-2 gap-2"></div>
+        </div>
+      </section>
+
+      <section id="ftab-actividad" class="flako-tab-panel hidden space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-bold text-sky-300">🌍 Actividad Reciente de Jugadores</h3>
+            <p class="text-xs text-slate-400">Victorias, nuevos récords, cuentas nuevas y logros en tiempo real.</p>
+          </div>
+          <button type="button" class="btn-flako-refresh-pub px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold cursor-pointer">↻ Actualizar</button>
+        </div>
+        <div id="pub-actividad-list" class="space-y-2"></div>
+      </section>
+
+      <section id="ftab-ranking" class="flako-tab-panel hidden space-y-4">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-sm font-bold text-emerald-300">📊 Top Jugadores y Mejores Récords</h3>
+          <button type="button" class="btn-flako-refresh-pub px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold cursor-pointer">↻ Actualizar</button>
+        </div>
+        <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Top Niveles y Puntos</h4>
+          <div id="pub-ranking-list" class="space-y-1.5"></div>
+        </div>
+        <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Mejores Récords por Mapa</h4>
+          <div id="pub-records-list" class="space-y-1.5"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<!-- FLAKO_ACCOUNTS_HTML_END -->
+
 </body>
 </html>
