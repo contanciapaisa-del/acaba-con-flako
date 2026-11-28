@@ -1826,8 +1826,8 @@
         const portalDefs = [
           { id: 'kill_flako', title: 'KILL FLAKO', subtitle: 'MODO ACTIVO • 3 ESCENARIOS', color: 0xa855f7, css: '#c084fc', x: -12, z: -8 },
           { id: 'david',      title: 'JUGANDO CON DAVID', subtitle: 'PRÓXIMAMENTE (INACTIVO)', color: 0xeab308, css: '#facc15', x: -4,  z: -14 },
-          { id: 'exit',       title: 'SALIR', subtitle: 'VOLVER AL MENÚ PRINCIPAL', color: 0x22c55e, css: '#4ade80', x: 4,   z: -14 },
-          { id: 'config',     title: 'CONFIGURACIÓN', subtitle: 'VOLUMEN • CONTROLES • CÁMARA', color: 0xef4444, css: '#f87171', x: 12,  z: -8 }
+          { id: 'exit',       title: 'BEASTKILL', subtitle: 'ESCAPE DE LA BESTIA • BLOQUEADO', color: 0x22c55e, css: '#4ade80', x: 4,   z: -14 },
+          { id: 'config',     title: 'SKYWAR', subtitle: 'PRÓXIMAMENTE (BLOQUEADO)', color: 0xef4444, css: '#f87171', x: 12,  z: -8 }
         ];
 
         portalDefs.forEach((p) => {
@@ -3432,19 +3432,37 @@
       }
 
       function activatePortal(id) {
-        sound.playClick();
-        if (id === 'kill_flako') {
-          openModal('modal-scenarios');
-        } else if (id === 'david') {
-          openModal('modal-coming-soon');
-        } else if (id === 'exit') {
-          goToMainMenu();
-        } else if (id === 'config') {
-          openModal('modal-settings');
+      sound.playClick();
+      if (id === 'kill_flako') {
+        openModal('modal-scenarios');
+      } else {
+        const lockedInfo = {
+          david: {
+            title: '🔒 JUGANDO CON DAVID',
+            desc: 'Este modo está bloqueado y reservado para nuestra próxima actualización.'
+          },
+          exit: {
+            title: '🔒 BEASTKILL',
+            desc: 'Escape de la bestia — Modo bloqueado en desarrollo para una futura actualización.'
+          },
+          config: {
+            title: '🔒 SKYWAR',
+            desc: 'Combate en las alturas — Modo bloqueado en desarrollo para una futura actualización.'
+          }
+        };
+        const info = lockedInfo[id] || lockedInfo.david;
+        const modal = document.getElementById('modal-coming-soon');
+        if (modal) {
+          const h2 = modal.querySelector('h2');
+          const p = modal.querySelector('p');
+          if (h2) h2.textContent = info.title;
+          if (p) p.textContent = info.desc;
         }
+        openModal('modal-coming-soon');
       }
+    }
 
-      function goToMainMenu() {
+    function goToMainMenu() {
         ['modal-scenarios', 'modal-coming-soon', 'modal-settings', 'modal-endgame'].forEach(closeModal);
         if (document.pointerLockElement) document.exitPointerLock();
         state.mode = 'MENU';
@@ -4136,6 +4154,8 @@
     document.getElementById("fp-logros-count").textContent = String(accState.logros.length);
 
     const prog = (p.progreso && typeof p.progreso === "object") ? p.progreso : {};
+    const mobsEl = document.getElementById("fp-mobs-abatidos");
+    if (mobsEl) mobsEl.textContent = String(Number(prog.kills_totales || 0));
     const mapas = Array.isArray(prog.niveles_desbloqueados) && prog.niveles_desbloqueados.length
       ? prog.niveles_desbloqueados : ["NeverlynD"];
     document.getElementById("fp-mapas").innerHTML = mapas.map(m =>
@@ -4278,7 +4298,7 @@
     if (!sb) return;
 
     const [perfRes, logRes, actRes, recRes] = await Promise.all([
-      sb.from("perfiles").select("id, apodo, nivel, puntos_totales, partidas_jugadas, victorias").order("puntos_totales", { ascending: false }).limit(30),
+      sb.from("perfiles").select("id, apodo, nivel, puntos_totales, partidas_jugadas, victorias, progreso").order("puntos_totales", { ascending: false }).limit(30),
       sb.from("logros_usuario").select("*").order("desbloqueado_en", { ascending: false }).limit(60),
       sb.from("actividad_usuarios").select("*").order("created_at", { ascending: false }).limit(40),
       sb.from("records_mapa").select("*").order("mejor_puntaje", { ascending: false }).limit(30)
@@ -4343,7 +4363,7 @@
             <span class="font-bold text-white">${esc(p.apodo)}</span>
             <span class="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-200 text-[10px]">Nv.${p.nivel || 1}</span>
           </div>
-          <div class="text-slate-300"><span class="font-bold text-amber-300">${p.puntos_totales || 0} pts</span> · 🏆 ${p.victorias || 0} vic · 🎮 ${p.partidas_jugadas || 0}</div>
+          <div class="text-slate-300"><span class="font-bold text-amber-300">${p.puntos_totales || 0} pts</span> · 💀 ${(p.progreso && p.progreso.kills_totales) || 0} mobs · 🏆 ${p.victorias || 0} vic</div>
         </div>`).join("")
         : `<p class="text-xs text-slate-400">Aún no hay jugadores en el ranking.</p>`;
     }
@@ -4557,11 +4577,38 @@
       showAlert("Sesión cerrada correctamente.", true);
     });
 
+    const btnTools = document.getElementById("btn-flako-tools");
+    const toolsMenu = document.getElementById("flako-tools-menu");
+    if (btnTools && toolsMenu) {
+      btnTools.addEventListener("click", e => {
+        e.stopPropagation();
+        if (document.pointerLockElement) document.exitPointerLock();
+        toolsMenu.classList.toggle("hidden");
+      });
+      document.addEventListener("click", e => {
+        if (!toolsMenu.contains(e.target) && e.target !== btnTools && !btnTools.contains(e.target)) {
+          toolsMenu.classList.add("hidden");
+        }
+      });
+      const btnSet = document.getElementById("btn-tool-settings");
+      if (btnSet) btnSet.addEventListener("click", () => {
+        toolsMenu.classList.add("hidden");
+        if (typeof openModal === "function") openModal("modal-settings");
+      });
+      const btnExit = document.getElementById("btn-tool-exit");
+      if (btnExit) btnExit.addEventListener("click", () => {
+        toolsMenu.classList.add("hidden");
+        if (typeof goToMainMenu === "function") goToMainMenu();
+      });
+    }
+
     setInterval(() => {
-      const bar = document.getElementById("flako-acc-bar");
-      if (!bar || typeof state === "undefined") return;
+      if (typeof state === "undefined") return;
       const playing = state.mode === "PLAYING";
-      bar.classList.toggle("hidden", playing);
+      const bCom = document.getElementById("btn-flako-community");
+      const bAcc = document.getElementById("btn-flako-account");
+      if (bCom) bCom.classList.toggle("hidden", playing);
+      if (bAcc) bAcc.classList.toggle("hidden", playing);
     }, 300);
   }
 
@@ -4619,6 +4666,35 @@
   <button id="btn-flako-account" type="button" class="px-3 py-2 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-300/50 text-white text-xs sm:text-sm font-bold shadow-lg backdrop-blur transition flex items-center gap-1.5 cursor-pointer">
     <span>👤</span><span id="flako-acc-btn-label">Cuenta / Entrar</span>
   </button>
+  <!-- FLAKO_TOOLS_START -->
+  <div id="flako-tools-wrap" class="relative">
+    <button id="btn-flako-tools" type="button" title="Herramientas: Configuración y Salir" class="w-10 h-10 rounded-xl bg-slate-900/95 hover:bg-slate-800 border-2 border-slate-500/80 hover:border-cyan-300 shadow-lg backdrop-blur flex items-center justify-center transition active:scale-95 cursor-pointer">
+      <svg viewBox="0 0 16 16" class="w-6 h-6" shape-rendering="crispEdges" style="image-rendering: pixelated;">
+        <rect x="5" y="1" width="6" height="1" fill="#0f172a"/>
+        <rect x="4" y="2" width="1" height="1" fill="#0f172a"/><rect x="5" y="2" width="6" height="1" fill="#f8fafc"/><rect x="11" y="2" width="1" height="1" fill="#0f172a"/>
+        <rect x="3" y="3" width="1" height="1" fill="#0f172a"/><rect x="4" y="3" width="8" height="1" fill="#e2e8f0"/><rect x="12" y="3" width="1" height="1" fill="#0f172a"/>
+        <rect x="2" y="4" width="1" height="1" fill="#0f172a"/><rect x="3" y="4" width="3" height="1" fill="#e2e8f0"/><rect x="6" y="4" width="4" height="1" fill="#0f172a"/><rect x="10" y="4" width="3" height="1" fill="#e2e8f0"/><rect x="13" y="4" width="1" height="1" fill="#0f172a"/>
+        <rect x="1" y="5" width="1" height="1" fill="#0f172a"/><rect x="2" y="5" width="3" height="1" fill="#e2e8f0"/><rect x="5" y="5" width="1" height="1" fill="#0f172a"/><rect x="6" y="5" width="4" height="1" fill="#1e293b"/><rect x="10" y="5" width="1" height="1" fill="#0f172a"/><rect x="11" y="5" width="3" height="1" fill="#cbd5e1"/><rect x="14" y="5" width="1" height="1" fill="#0f172a"/>
+        <rect x="1" y="6" width="1" height="1" fill="#0f172a"/><rect x="2" y="6" width="3" height="1" fill="#cbd5e1"/><rect x="5" y="6" width="1" height="1" fill="#0f172a"/><rect x="6" y="6" width="4" height="1" fill="#334155"/><rect x="10" y="6" width="1" height="1" fill="#0f172a"/><rect x="11" y="6" width="3" height="1" fill="#cbd5e1"/><rect x="14" y="6" width="1" height="1" fill="#0f172a"/>
+        <rect x="1" y="7" width="1" height="1" fill="#0f172a"/><rect x="2" y="7" width="4" height="1" fill="#cbd5e1"/><rect x="6" y="7" width="4" height="1" fill="#0f172a"/><rect x="10" y="7" width="4" height="1" fill="#cbd5e1"/><rect x="14" y="7" width="1" height="1" fill="#0f172a"/>
+        <rect x="1" y="8" width="1" height="1" fill="#0f172a"/><rect x="2" y="8" width="1" height="1" fill="#0f172a"/><rect x="3" y="8" width="10" height="1" fill="#94a3b8"/><rect x="13" y="8" width="1" height="1" fill="#0f172a"/><rect x="14" y="8" width="1" height="1" fill="#0f172a"/>
+        <rect x="1" y="9" width="1" height="2" fill="#0f172a"/><rect x="2" y="9" width="2" height="2" fill="#64748b"/><rect x="4" y="9" width="1" height="2" fill="#0f172a"/><rect x="5" y="9" width="6" height="2" fill="#475569"/><rect x="11" y="9" width="1" height="2" fill="#0f172a"/><rect x="12" y="9" width="2" height="2" fill="#334155"/><rect x="14" y="9" width="1" height="2" fill="#0f172a"/>
+        <rect x="2" y="11" width="1" height="1" fill="#0f172a"/><rect x="3" y="11" width="1" height="1" fill="#64748b"/><rect x="4" y="11" width="1" height="1" fill="#0f172a"/><rect x="5" y="11" width="6" height="1" fill="#475569"/><rect x="11" y="11" width="1" height="1" fill="#0f172a"/><rect x="12" y="11" width="1" height="1" fill="#334155"/><rect x="13" y="11" width="1" height="1" fill="#0f172a"/>
+        <rect x="3" y="12" width="2" height="1" fill="#0f172a"/><rect x="5" y="12" width="6" height="1" fill="#334155"/><rect x="11" y="12" width="2" height="1" fill="#0f172a"/>
+        <rect x="4" y="13" width="8" height="1" fill="#0f172a"/>
+      </svg>
+    </button>
+    <div id="flako-tools-menu" class="hidden absolute right-0 mt-2 w-52 rounded-xl bg-slate-950/95 border border-slate-700 shadow-2xl p-1.5 space-y-1 backdrop-blur">
+      <div class="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800">Herramientas</div>
+      <button id="btn-tool-settings" type="button" class="w-full text-left px-3 py-2 rounded-lg hover:bg-indigo-600/30 text-slate-100 text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer">
+        <span>⚙️</span><span>Configuración</span>
+      </button>
+      <button id="btn-tool-exit" type="button" class="w-full text-left px-3 py-2 rounded-lg hover:bg-rose-600/30 text-rose-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer">
+        <span>🚪</span><span>Salir al menú</span>
+      </button>
+    </div>
+  </div>
+  <!-- FLAKO_TOOLS_END -->
 </div>
 
 <div id="flako-acc-modal" class="hidden fixed inset-0 z-[95] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
@@ -4717,7 +4793,7 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
             <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-center">
               <div id="fp-puntos" class="text-lg font-extrabold text-amber-300">0</div>
               <div class="text-[11px] text-slate-400">Puntos totales</div>
@@ -4730,7 +4806,11 @@
               <div id="fp-victorias" class="text-lg font-extrabold text-emerald-300">0</div>
               <div class="text-[11px] text-slate-400">Victorias</div>
             </div>
-            <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-center">
+            <div class="p-3 rounded-xl bg-slate-900 border border-rose-500/40 text-center">
+              <div id="fp-mobs-abatidos" class="text-lg font-extrabold text-rose-400">0</div>
+              <div class="text-[11px] text-slate-400">💀 Mobs abatidos</div>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-center col-span-2 sm:col-span-1">
               <div id="fp-logros-count" class="text-lg font-extrabold text-purple-300">0</div>
               <div class="text-[11px] text-slate-400">Logros</div>
             </div>
